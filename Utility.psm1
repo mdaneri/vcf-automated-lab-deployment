@@ -110,10 +110,30 @@ function Get-TransportZone {
     }
 }
 
+
+function ConvertTo-Netmask {
+    param (
+        [string]$NetworkCIDR
+    )
+
+    # Split the network address and the CIDR value
+    $network, $cidr = $NetworkCIDR -split '/'
+    $cidr = [int]$cidr
+
+    # Create the binary representation of the netmask
+    $binaryMask = "1" * $cidr + "0" * (32 - $cidr)
+    $netmask = [System.Net.IPAddress]::Parse(
+        [string]([convert]::ToInt32($binaryMask.Substring(0, 8), 2)) + "." +
+        [string]([convert]::ToInt32($binaryMask.Substring(8, 8), 2)) + "." +
+        [string]([convert]::ToInt32($binaryMask.Substring(16, 8), 2)) + "." +
+        [string]([convert]::ToInt32($binaryMask.Substring(24, 8), 2))
+    )
+    
+    return $netmask.IPAddressToString
+}
+
+
 Export-ModuleMember -Function Test-VMForReImport
-
-
 Export-ModuleMember -Function Write-Logger
-
-
 Export-ModuleMember -Function Get-TransportZone
+Export-ModuleMember -Function ConvertTo-Netmask

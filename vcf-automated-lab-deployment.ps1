@@ -7,6 +7,9 @@ param(
 install-Module -Name ImportExcel -Scope CurrentUser
  
 Import-Module -Name ./Utility.psm1
+
+
+
 # Cloud Builder Configurations
 $CloudbuilderVMHostname = "cloudbuilder"
 $CloudbuilderFQDN = "cloudbuilder.vcf.lab.local"
@@ -20,19 +23,39 @@ $CloudbuilderRootPassword = "VMw@re123!VMw@re123!"
 # General Deployment Configuration for Nested ESXi & Cloud Builder VM
 $VMDatacenter = "Datacenter"
 $VMCluster = "Cluster01"
-$ClusterEvcMode = ""
+#$ClusterEvcMode = ""
 $VMNetwork = "VLAN-10"
 $ESXVMNetwork1 = "Trunk"
 $ESXVMNetwork2 = "Trunk"
 $VMDatastore = "NVMe02"
-$VMNetmask = "255.255.255.0"
-#$NestedESXiManagementNetwork_gateway = "192.168.10.254"
-$nameserver = "192.168.0.250"
-$ntpServers = "192.168.0.1"
-$VMPassword = "VMw@re123!VMw@re123!"
-$VMDomain = "vcf.lab.local"
-$VMSyslog = "172.17.31.182"
 $VMFolder = "VCF"
+
+
+# Nested ESXi VM Resources for Management Domain
+$NestedESXiMGMTvCPU = "12"
+$NestedESXiMGMTvMEM = "78" #GB
+$NestedESXiMGMTCachingvDisk = "4" #GB
+$NestedESXiMGMTCapacityvDisk = "500" #GB
+$NestedESXiMGMTBootDisk = "32" #GB
+
+# Nested ESXi VM Resources for Workload Domain
+$NestedESXiWLDVSANESA = $true
+$NestedESXiWLDvCPU = "8"
+$NestedESXiWLDvMEM = "36" #GB
+$NestedESXiWLDCachingvDisk = "4" #GB
+$NestedESXiWLDCapacityvDisk = "250" #GB
+$NestedESXiWLDBootDisk = "32" #GB
+
+ 
+
+#$VMNetmask = "255.255.255.0"
+#$NestedESXiManagementNetwork_gateway = "192.168.10.254"
+#$nameServers = "192.168.0.250"
+#$ntpServers = "192.168.0.1"
+#$VMPassword = "VMw@re123!VMw@re123!"
+#$domain = "vcf.lab.local"
+#$VMSyslog = "172.17.31.182"
+ 
 
 #### DO NOT EDIT BEYOND HERE ####
 
@@ -103,9 +126,9 @@ $SddcManagerHostname = $r[35].P2
 #networkSpecs
 $NestedESXiManagementNetwork_subnet = $mgmtNetworkImport[1].P4
 #$NestedESXiManagementNetwork_gateway
-$NestedESXiManagementNetwork_vLanId=$mgmtNetworkImport[1].P2
-$NestedESXiManagementNetwork_Mtu=$mgmtNetworkImport[1].P6
-$NestedESXiManagementNetwork_portGroupKey=$mgmtNetworkImport[1].P3
+$NestedESXiManagementNetwork_vLanId = $mgmtNetworkImport[1].P2
+$NestedESXiManagementNetwork_Mtu = $mgmtNetworkImport[1].P6
+$NestedESXiManagementNetwork_portGroupKey = $mgmtNetworkImport[1].P3
 $NestedESXiManagementNetwork_gateway = $mgmtNetworkImport[1].P5
 
 $NestedESXivMotionNetwork_subnet = $mgmtNetworkImport[2].P4
@@ -129,16 +152,19 @@ $NestedESXivSanRangeEnd = $rangeImport[1].p2
 
 
 $VMPassword = $credentialsImport[5].P2
+$VMNetmask = ConvertTo-Netmask -NetworkCIDR $NestedESXiManagementNetwork_subnet
+$subdomain = $r2[3].P2
+$domain = $r2[3].P2
 $hostSpecs = @()
 $i = 3
 foreach ($key in $NestedESXiHostnameToIPsForManagementDomain ) {
-    hostSpecs              +=[ordered]@ {
+    $hostSpecs += [ordered]@{
         association      = $managementDatacenter
-        ipAddressPrivate = [ordered]@ {
+        ipAddressPrivate = [ordered]@{
             ipAddress = $NestedESXiHostnameToIPsForManagementDomain[$key]
         }
         hostname         = $key
-        credentials      = [ordered]@ {
+        credentials      = [ordered]@{
             username = "root"
             password = $VMPassword
         }
@@ -187,9 +213,21 @@ $nsxtAdminPassword = $credentialsImport[11].P2
 $nsxtAuditPassword = $credentialsImport[12].P2
 $nsxtManagerSize = $r[33].P2
 $nsxtvip = $r[29].P3
-$nsxtvipFqdn = $r[29].P2
-$nameserver = "$($r[3].P2) ,$($r[4].P2)"
-$ntpServers = @($r[5].P2 , $r[6].P2)
+$nsxtvipFqdn = $r[29].P2 
+
+$nameServers = @()
+for ($i = 3; $i -le 4; $i++) {
+    if ($r[$i].P2 -ne 'n/a') {
+        $nameServers += $r[$i].P2
+    }  
+}
+
+$ntpServers = @()
+for ($i = 5; $i -le 6 ; $i++) {
+    if ($r[$i].P2 -ne 'n/a') {
+        $ntpServers += $r[$i].P2
+    }  
+}
 $nsxtLicense = $licenseImport[4].P2
 $nsxtTransportVlanId = $overlayImport[0].P2
 $nsxtipAddressPoolSpec = [ordered]@{
@@ -251,9 +289,9 @@ $orderedHashTable = [ordered]@{
     fipsEnabled                 = ($r2[6].P3 -ieq 'yes')
     ntpServers                  = $ntpServers
     dnsSpec                     = [ordered]@{
-        subdomain  = $r2[3].P2
-        domain     = $r2[3].P2
-        nameserver = $nameserver
+        subdomain  = $subdomain
+        domain     = $domain
+        nameserver = $nameServers
     }
     networkSpecs                = @(
         [ordered]@{
@@ -407,10 +445,7 @@ $NestedESXiApplianceOVA = "./ova/Nested_ESXi8.0u3_Appliance_Template_v1.ova"
 $CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
 
 # VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
-$VCSALicense = ""
-$ESXILicense = ""
-$VSANLicense = ""
-$NSXLicense = ""
+ 
  
  
 
@@ -423,28 +458,12 @@ $NSXLicense = ""
 #$SddcManagerLocalPassword = "VMw@re123!VMw@re123!"
 
 # Nested ESXi VMs for Workload Domain
-$NestedESXiHostnameToIPsForWorkloadDomain = [ordered]@{
-    "vcf42-esx05" = "192.168.10.104"
-    "vcf42-esx06" = "192.168.10.105"
-    "vcf42-esx07" = "192.168.10.106"
-    "vcf42-esx08" = "192.168.10.107"
-}
-
-# Nested ESXi VM Resources for Management Domain
-$NestedESXiMGMTvCPU = "12"
-$NestedESXiMGMTvMEM = "78" #GB
-$NestedESXiMGMTCachingvDisk = "4" #GB
-$NestedESXiMGMTCapacityvDisk = "500" #GB
-$NestedESXiMGMTBootDisk = "32" #GB
-
-# Nested ESXi VM Resources for Workload Domain
-$NestedESXiWLDVSANESA = $true
-$NestedESXiWLDvCPU = "8"
-$NestedESXiWLDvMEM = "36" #GB
-$NestedESXiWLDCachingvDisk = "4" #GB
-$NestedESXiWLDCapacityvDisk = "250" #GB
-$NestedESXiWLDBootDisk = "32" #GB
-
+#$NestedESXiHostnameToIPsForWorkloadDomain = [ordered]@{
+ #   "vcf42-esx05" = "192.168.10.104"
+  #  "vcf42-esx06" = "192.168.10.105"
+  #  "vcf42-esx07" = "192.168.10.106"
+  #  "vcf42-esx08" = "192.168.10.107"
+#}
  
 <# 
 # vCenter Configuration
@@ -468,12 +487,12 @@ $NSXAuditPassword = "VMw@re123!VMw@re123!"
 $credentialsreCheck = 1
 $confirmDeployment = 1
 $deployNestedESXiVMsForMgmt = 1
-$deployNestedESXiVMsForWLD = 1
+$deployNestedESXiVMsForWLD = 0
 $deployCloudBuilder = 1
 $moveVMsIntovApp = 1
 $generateMgmJson = 1
 $startVCFBringup = 1
-$generateWldHostCommissionJson = 1
+$generateWldHostCommissionJson = 0
 $uploadVCFNotifyScript = 0
 
 $srcNotificationScript = "vcf-bringup-notification.sh"
@@ -601,7 +620,7 @@ if ($confirmDeployment -eq 1) {
     Write-Host -NoNewline -ForegroundColor Green "Gateway: "
     Write-Host -ForegroundColor White $NestedESXiManagementNetwork_gateway
     Write-Host -NoNewline -ForegroundColor Green "DNS: "
-    Write-Host -ForegroundColor White $nameserver
+    Write-Host -ForegroundColor White $nameServers
     Write-Host -NoNewline -ForegroundColor Green "NTP: "
     Write-Host -ForegroundColor White $ntpServers
     Write-Host -NoNewline -ForegroundColor Green "Syslog: "
@@ -668,8 +687,8 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
             $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
             $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
             $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-            $ovfconfig.common.guestinfo.dns.value = $nameserver
-            $ovfconfig.common.guestinfo.domain.value = $VMDomain
+            $ovfconfig.common.guestinfo.dns.value = $nameServers
+            $ovfconfig.common.guestinfo.domain.value = $domain
             $ovfconfig.common.guestinfo.ntp.value = $ntpServers
             $ovfconfig.common.guestinfo.syslog.value = $VMSyslog
             $ovfconfig.common.guestinfo.password.value = $VMPassword
@@ -734,8 +753,8 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
             $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
             $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
             $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-            $ovfconfig.common.guestinfo.dns.value = $nameserver
-            $ovfconfig.common.guestinfo.domain.value = $VMDomain
+            $ovfconfig.common.guestinfo.dns.value = $nameServers
+            $ovfconfig.common.guestinfo.domain.value = $domain
             $ovfconfig.common.guestinfo.ntp.value = $ntpServers
             $ovfconfig.common.guestinfo.syslog.value = $VMSyslog
             $ovfconfig.common.guestinfo.password.value = $VMPassword
@@ -844,9 +863,9 @@ if ($deployCloudBuilder -eq 1) {
         $ovfconfig.common.guestinfo.ip0.value = $CloudbuilderIP
         $ovfconfig.common.guestinfo.netmask0.value = $VMNetmask
         $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-        $ovfconfig.common.guestinfo.DNS.value = $nameserver
-        $ovfconfig.common.guestinfo.domain.value = $VMDomain
-        $ovfconfig.common.guestinfo.searchpath.value = $VMDomain
+        $ovfconfig.common.guestinfo.DNS.value = $nameServers
+        $ovfconfig.common.guestinfo.domain.value = $domain
+        $ovfconfig.common.guestinfo.searchpath.value = $domain
         $ovfconfig.common.guestinfo.ntp.value = $ntpServers
         $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = $CloudbuilderAdminUsername
         $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $CloudbuilderAdminPassword
@@ -917,9 +936,9 @@ if ($generateMgmJson -eq 1) {
         "ceipEnabled"                 = $true
         "ntpServers"                  = @($ntpServers)
         "dnsSpec"                     = [ordered]@{
-            "subdomain"  = $VMDomain
-            "domain"     = $VMDomain
-            "nameserver" = $nameserver
+            "subdomain"  = $domain
+            "domain"     = $domain
+            "nameserver" = $nameServers
         }
         "sddcManagerSpec"             = [ordered]@{
             "ipAddress"             = $SddcManagerIP
@@ -1163,7 +1182,7 @@ if ($generateWldHostCommissionJson -eq 1) {
     $commissionHostsUI = @()
     $commissionHostsAPI = @()
     $NestedESXiHostnameToIPsForWorkloadDomain.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
-        $hostFQDN = $_.Key + "." + $VMDomain
+        $hostFQDN = $_.Key + "." + $domain
 
         $tmp1 = [ordered] @{
             "hostfqdn"        = $hostFQDN;
