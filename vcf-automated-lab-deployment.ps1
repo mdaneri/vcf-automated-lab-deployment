@@ -39,7 +39,7 @@ $NestedESXiMGMTCapacityvDisk = "500" #GB
 $NestedESXiMGMTBootDisk = "32" #GB
 
 # Nested ESXi VM Resources for Workload Domain
-$NestedESXiWLDVSANESA = $true
+$vSanEsa = $true
 $NestedESXiWLDvCPU = "8"
 $NestedESXiWLDvMEM = "36" #GB
 $NestedESXiWLDCachingvDisk = "4" #GB
@@ -72,7 +72,7 @@ if (Test-Path $ExcelFile) {
     $r = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly
     $licenseImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly -StartRow 11 -EndRow 15
     $r2 = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 9 -EndColumn 11 -DataOnly
-    $credentialsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'credentials' -DataOnly   
+    $credentialsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'credentials' -DataOnly
     $mgmtNetworkImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 7 -EndRow 10
     $esxImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 6 -EndRow 7
     $rangeImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 8 -EndRow 10
@@ -126,24 +126,23 @@ $SddcManagerHostname = $r[35].P2
 #networkSpecs
 $NestedESXiManagementNetwork_subnet = $mgmtNetworkImport[1].P4
 #$NestedESXiManagementNetwork_gateway
-$NestedESXiManagementNetwork_vLanId = $mgmtNetworkImport[1].P2
-$NestedESXiManagementNetwork_Mtu = $mgmtNetworkImport[1].P6
+$NestedESXiManagementNetwork_vLanId = "$($mgmtNetworkImport[1].P2)"
+$NestedESXiManagementNetwork_Mtu = "$($mgmtNetworkImport[1].P6)"
 $NestedESXiManagementNetwork_portGroupKey = $mgmtNetworkImport[1].P3
 $NestedESXiManagementNetwork_gateway = $mgmtNetworkImport[1].P5
 
 $NestedESXivMotionNetwork_subnet = $mgmtNetworkImport[2].P4
-$NestedESXivMotionNetwork_vLanId = $mgmtNetworkImport[2].P2
-$NestedESXivMotionNetwork_Mtu = $mgmtNetworkImport[2].P6
+$NestedESXivMotionNetwork_vLanId = "$($mgmtNetworkImport[2].P2)"
+$NestedESXivMotionNetwork_Mtu = "$($mgmtNetworkImport[2].P6)"
 $NestedESXivMotionNetwork_portGroupKey = $mgmtNetworkImport[2].P3
 $NestedESXivMotionNetwork_gateway = $mgmtNetworkImport[2].P5
 
-$NestedESXivMotionRangeStart = $rangeImport[0].p4
-$NestedESXivMotionRangeEnd = $rangeImport[0].p2
-
+$NestedESXivMotionRangeStart = $rangeImport[0].p2
+$NestedESXivMotionRangeEnd = $rangeImport[0].p4
 
 $NestedESXivSanNetwork_subnet = $mgmtNetworkImport[3].P4
-$NestedESXivSanNetwork_vLanId = $mgmtNetworkImport[3].P2
-$NestedESXivSanNetwork_Mtu = $mgmtNetworkImport[3].P6
+$NestedESXivSanNetwork_vLanId = "$($mgmtNetworkImport[3].P2)"
+$NestedESXivSanNetwork_Mtu = "$($mgmtNetworkImport[3].P6)"
 $NestedESXivSanNetwork_portGroupKey = $mgmtNetworkImport[3].P3
 $NestedESXivSanNetwork_gateway = $mgmtNetworkImport[3].P5
 
@@ -155,10 +154,14 @@ $VMPassword = $credentialsImport[5].P2
 $VMNetmask = ConvertTo-Netmask -NetworkCIDR $NestedESXiManagementNetwork_subnet
 $subdomain = $r2[3].P2
 $domain = $r2[3].P2
+
+$vSanEsa = ($r2[16].P2 -ieq 'yes')
+$skipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
+
 $hostSpecs = @()
 $i = 3
-foreach ($key in $NestedESXiHostnameToIPsForManagementDomain ) {
-    $hostSpecs += [ordered]@{
+foreach ($key in $NestedESXiHostnameToIPsForManagementDomain.Keys ) {
+    $h = [ordered]@{
         association      = $managementDatacenter
         ipAddressPrivate = [ordered]@{
             ipAddress = $NestedESXiHostnameToIPsForManagementDomain[$key]
@@ -168,9 +171,13 @@ foreach ($key in $NestedESXiHostnameToIPsForManagementDomain ) {
             username = "root"
             password = $VMPassword
         }
-        sshThumbprint    = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[$i].P2  
-        sslThumbprint    = ($null -eq $thumbprintImport[3].P4)?"SHA25_DUMMY_VALUE": $thumbprintImport[$i].P4
     }
+    if (!$skipEsxThumbprintValidation) {
+        $h['sshThumbprint'] = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[$i].P2  
+        $h['sslThumbprint'] = ($null -eq $thumbprintImport[3].P4)?"SHA25_DUMMY_VALUE": $thumbprintImport[$i].P4
+    }
+
+    $hostSpecs += $h
     $i++
 }
  
@@ -179,8 +186,8 @@ foreach ($key in $NestedESXiHostnameToIPsForManagementDomain ) {
 #VMManagement
 $VmManamegent_subnet = $mgmtNetworkImport[0].P4
 $VmManamegent_gateway = $mgmtNetworkImport[0].P5
-$VmManamegent_vlanId = $mgmtNetworkImport[0].P2
-$VmManamegent_mtu = $mgmtNetworkImport[0].P6
+$VmManamegent_vlanId = "$($mgmtNetworkImport[0].P2)"
+$VmManamegent_mtu = "$($mgmtNetworkImport[0].P6)"
 $VmManamegent_portGroupKey = $mgmtNetworkImport[0].P3
 
 <# 
@@ -215,12 +222,16 @@ $nsxtManagerSize = $r[33].P2
 $nsxtvip = $r[29].P3
 $nsxtvipFqdn = $r[29].P2 
 
-$nameServers = @()
+ 
+$ns = @()
 for ($i = 3; $i -le 4; $i++) {
     if ($r[$i].P2 -ne 'n/a') {
-        $nameServers += $r[$i].P2
+        $ns += $r[$i].P2
     }  
 }
+
+ 
+$nameServers = $ns -join ','
 
 $ntpServers = @()
 for ($i = 5; $i -le 6 ; $i++) {
@@ -229,7 +240,7 @@ for ($i = 5; $i -le 6 ; $i++) {
     }  
 }
 $nsxtLicense = $licenseImport[4].P2
-$nsxtTransportVlanId = $overlayImport[0].P2
+$nsxtTransportVlanId = "$($overlayImport[0].P2)"
 $nsxtipAddressPoolSpec = [ordered]@{
     name        = $overlayImport[4].P2
     description = $overlayImport[3].P2
@@ -247,12 +258,13 @@ $nsxtipAddressPoolSpec = [ordered]@{
     )
 }
 
+ 
 
 $vsanSpec = [ordered]@{
     licenseFile   = $licenseImport[2].P2
-    vsanDedup     = ($r2[15].P2 -ieq 'yes')
+    vsanDedup     = (($vSanEsa)? $false : ($r2[15].P2 -ieq 'yes'))
     esaConfig     = [ordered]@{
-        enabled = ($r2[16].P2 -ieq 'yes')
+        enabled = $vSanEsa
     }
     hclFile       = $r2[17].P2 
     datastoreName = $r2[14].P2
@@ -267,20 +279,20 @@ $VCFWorkloadDomainAPIJSONFile = "vcf-commission-host-api.json"
 
 $orderedHashTable = [ordered]@{
     deployWithoutLicenseKeys    = $deployWithoutLicenseKeys
-    skipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
+    skipEsxThumbprintValidation = $skipEsxThumbprintValidation
     managementPoolName          = $managementPoolName
     sddcManagerSpec             = [ordered]@{
         secondUserCredentials = [ordered]@{
             username = "vcf"
             password = $SddcManagerVcfPassword
         }        
+        ipAddress             = $SddcManagerIP
+        hostname              = $SddcManagerHostname
         rootUserCredentials   = [ordered]@{
             username = 'root'
             password = $SddcManagerRootPassword
         }
-        localUserPassword     = $SddcManagerLocalPassword
-        ipAddress             = $SddcManagerIP
-        hostname              = $SddcManagerHostname
+        localUserPassword     = $SddcManagerLocalPassword        
     }
     sddcId                      = $r[38].P2
     esxLicense                  = $licenseImport[1].P2
@@ -297,6 +309,7 @@ $orderedHashTable = [ordered]@{
         [ordered]@{
             networkType  = "MANAGEMENT"
             subnet       = $NestedESXiManagementNetwork_subnet
+            gateway      = $NestedESXiManagementNetwork_gateway
             vlanId       = $NestedESXiManagementNetwork_vLanId
             mtu          = $NestedESXiManagementNetwork_Mtu
             portGroupKey = $NestedESXiManagementNetwork_portGroupKey
@@ -355,7 +368,7 @@ $orderedHashTable = [ordered]@{
         [ordered]@{
             dvsName          = $dsImport[1].P2
             vmnics           = @($dsImport[2].p2 -split ',')
-            mtu              = $dsImport[3].P2
+            mtu              = "$($dsImport[3].P2)"
             networks         = @("MANAGEMENT", "VMOTION", "VSAN", "VM_MANAGEMENT")
             niocSpecs        = @(
                 [ordered]@{
@@ -402,8 +415,8 @@ $orderedHashTable = [ordered]@{
     )
     clusterSpec                 = [ordered]@{
         clusterName         = $r[19].P2        
-        clusterImageEnabled = $r[20].P2 -eq 'yes'
         clusterEvcMode      = $r[21].P2
+        clusterImageEnabled = $r[20].P2 -eq 'yes'
         vmFolders           = [ordered]@{
             MANAGEMENT = "$SiteCode-fd-mgmt"
             NETWORKING = "$SiteCode-fd-nsx"
@@ -419,11 +432,11 @@ $orderedHashTable = [ordered]@{
         }
     )
     vcenterSpec                 = [ordered]@{
-        licenseFile         = $licenseImport[3].P2
         vcenterIp           = $r[13].P3
-        vcenterHostname     = $r[13].P2         
+        vcenterHostname     = $r[13].P2   
+        licenseFile         = $licenseImport[3].P2      
         vmSize              = $r[14].P2
-        storageSize         = $r[15].P2
+        storageSize         = ($r[15].P2 -eq 'large')?"lstorage":(($r[15].P2 -eq 'xlarge')?"xlstorage":$null)
         rootVcenterPassword = $credentialsImport[8].P2
     }
     hostSpecs                   = $hostSpecs
@@ -459,10 +472,10 @@ $CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
 
 # Nested ESXi VMs for Workload Domain
 #$NestedESXiHostnameToIPsForWorkloadDomain = [ordered]@{
- #   "vcf42-esx05" = "192.168.10.104"
-  #  "vcf42-esx06" = "192.168.10.105"
-  #  "vcf42-esx07" = "192.168.10.106"
-  #  "vcf42-esx08" = "192.168.10.107"
+#   "vcf42-esx05" = "192.168.10.104"
+#  "vcf42-esx06" = "192.168.10.105"
+#  "vcf42-esx07" = "192.168.10.106"
+#  "vcf42-esx08" = "192.168.10.107"
 #}
  
 <# 
@@ -792,7 +805,7 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
             Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $NestedESXiWLDBootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
 
             # vSAN ESA requires NVMe Controller
-            if ($NestedESXiWLDVSANESA) {
+            if ($vSanEsa) {
                 Write-Logger "Updating storage controller to NVMe for vSAN ESA ..."
                 $devices = $vm.ExtensionData.Config.Hardware.Device
 
@@ -1233,14 +1246,16 @@ if ($startVCFBringup -eq 1) {
             }
         }
         catch {
-            Write-Logger "Cloud Builder is not ready yet, sleeping for 120 seconds ..."
-            Start-Sleep 120
+            Write-Logger "Cloud Builder is not ready yet, sleeping for 30 seconds ..."
+            Start-Sleep 30
         }
     }
 
     Write-Logger "Submitting VCF Bringup request ..."
 
-    #$inputJson = Get-Content -Raw $VCFManagementDomainJSONFile
+    $inputJson = $orderedHashTable | convertto-json  -Depth 10 #Get-Content -Raw $VCFManagementDomainJSONFile
+
+    $inputJson | out-file 's.json'
     $adminPwd = ConvertTo-SecureString $CloudbuilderAdminPassword -AsPlainText -Force
     $cred = New-Object Management.Automation.PSCredential ($CloudbuilderAdminUsername, $adminPwd)
     $bringupAPIParms = @{
