@@ -1,11 +1,19 @@
 param(
     [string]
-    $ExcelFile = ".\vcf-ems-Deployment-Parameter11.xlsx"
+    $ExcelFile = ".\vcf-ems-Deployment-Parameter11.xlsx",
+    [string]
+    $HCLJsonFile = "$PWD/nested-esxi-vsan-esa-hcl.json",
+    [string]
+    $VAppName,
+    [switch]
+    $UseSSH
 )
 # Author: William Lam
 # Website: www.williamlam.com
 install-Module -Name "ImportExcel" -Scope CurrentUser
-install-module -Name "Posh-SSH"  -Scope CurrentUser
+if ($UseSSH.isPresent) {
+    install-module -Name "Posh-SSH"  -Scope CurrentUser
+}
 Import-Module -Name ./Utility.psm1
 
 
@@ -40,30 +48,15 @@ $NestedESXiMGMTBootDisk = "32" #GB
 
 # Nested ESXi VM Resources for Workload Domain
 $vSanEsa = $true
-$NestedESXiWLDvCPU = "8"
-$NestedESXiWLDvMEM = "36" #GB
-$NestedESXiWLDCachingvDisk = "4" #GB
-$NestedESXiWLDCapacityvDisk = "250" #GB
-$NestedESXiWLDBootDisk = "32" #GB
+
+  
+if ([string]::IsNullOrEmpty( $VAppName) ) {
+    $random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
+    $VAppName = "Nested-VCF-Lab-$random_string"
+}
+$verboseLogFile = "$VAppName-deployment.log"
 
  
-
-#$VMNetmask = "255.255.255.0"
-#$NestedESXiManagementNetwork_gateway = "192.168.10.254"
-#$nameServers = "192.168.0.250"
-#$ntpServers = "192.168.0.1"
-#$VMPassword = "VMw@re123!VMw@re123!"
-#$domain = "vcf.lab.local"
-#$VMSyslog = "172.17.31.182"
- 
-
-#### DO NOT EDIT BEYOND HERE ####
-
-$verboseLogFile = "vcf-lab-deployment.log"
-$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
-$VAppName = "Nested-VCF-Lab-$random_string"
-$SeparateNSXSwitch = $false
-$VCFVersion = ""
 
 
 
@@ -103,6 +96,36 @@ if (Test-Path $ExcelFile) {
 # 7   Secondary vSphere Distributed Switch - Transport Zone Type n/a
 # 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
 # 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
+
+
+
+# vCenter Server used to deploy VMware Cloud Foundation Lab
+$VIServer = "vmw-vc01.lab.local"
+$VIUsername = "administrator@vsphere.local"
+$VIPassword = "Pata2Pata1!"
+
+# Full Path to both the Nested ESXi & Cloud Builder OVA
+$NestedESXiApplianceOVA = "./ova/Nested_ESXi8.0u3_Appliance_Template_v1.ova"
+$CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
+
+# VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
+ 
+$credentialsreCheck = 1
+$confirmDeployment = 1
+$deployNestedESXiVMsForMgmt = 1
+$deployNestedESXiVMsForWLD = 0
+$deployCloudBuilder = 1
+$moveVMsIntovApp = 1
+$generateMgmJson = 1
+$startVCFBringup = 1
+$generateWldHostCommissionJson = 0
+$uploadVCFNotifyScript = 0
+
+$srcNotificationScript = "vcf-bringup-notification.sh"
+$dstNotificationScript = "/root/vcf-bringup-notification.sh"
+
+$StartTime = Get-Date
+
 $SiteCode = 'sfo-m01'
 $NestedESXiHostnameToIPsForManagementDomain = [ordered]@{
     $esxImport[0].P1 = $esxImport[1].P1
@@ -195,18 +218,7 @@ $VmManamegent_gateway = $mgmtNetworkImport[0].P5
 $VmManamegent_vlanId = "$($mgmtNetworkImport[0].P2)"
 $VmManamegent_mtu = "$($mgmtNetworkImport[0].P6)"
 $VmManamegent_portGroupKey = $mgmtNetworkImport[0].P3
-
-<# 
-# ESXi Network Configuration
-$NestedESXiManagementNetwork_subnet = "192.168.10.0/24" # should match $VMNetwork configuration
-$NestedESXiManagementNetwork_vLanId = "10"
-$NestedESXivMotionNetwork_subnet = "192.168.11.0/24"
-$NestedESXivMotionNetwork_vLanId = "11"
-$NestedESXivSANNetworkCidr = "192.168.12.0/24"
-$NestedESXivSANNetwork_vLanId = "12"
-$NestedESXiNSXTepNetworkCidr = "192.168.13.0/24"
-$NestedESXiNSXTepNetwork_vLanId = "13"
-#>
+ 
 
 #nsxt
 
@@ -318,7 +330,7 @@ $orderedHashTable = [ordered]@{
             gateway      = $NestedESXiManagementNetwork_gateway
             vlanId       = $NestedESXiManagementNetwork_vLanId
             mtu          = $NestedESXiManagementNetwork_Mtu
-            portGroupKey = $NestedESXiManagementNetwork_portGroupKey
+            portGroupKey = $NestedESXiManagementNetwork_portGroupKey    
         }
         [ordered]@{
             networkType            = "VMOTION"
@@ -511,19 +523,8 @@ $orderedHashTable = [ordered]@{
 
 
 
-
-
-# vCenter Server used to deploy VMware Cloud Foundation Lab
-$VIServer = "vmw-vc01.lab.local"
-$VIUsername = "administrator@vsphere.local"
-$VIPassword = "Pata2Pata1!"
-
-# Full Path to both the Nested ESXi & Cloud Builder OVA
-$NestedESXiApplianceOVA = "./ova/Nested_ESXi8.0u3_Appliance_Template_v1.ova"
-$CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
-
-# VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
  
+
  
  
 
@@ -562,68 +563,47 @@ $NSXAuditPassword = "VMw@re123!VMw@re123!"
 #>
  
 
-$credentialsreCheck = 1
-$confirmDeployment = 1
-$deployNestedESXiVMsForMgmt = 1
-$deployNestedESXiVMsForWLD = 0
-$deployCloudBuilder = 1
-$moveVMsIntovApp = 1
-$generateMgmJson = 1
-$startVCFBringup = 1
-$generateWldHostCommissionJson = 0
-$uploadVCFNotifyScript = 0
+# Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
+if ($CloudBuilderOVA -match "5.2.0") {
+    $VCFVersion = "5.2.0"
+}
+elseif ($CloudBuilderOVA -match "5.1.1") {
+    $VCFVersion = "5.1.1"
+}
+elseif ($CloudBuilderOVA -match "5.1.0") {
+    $VCFVersion = "5.1.0"
+}
+else {
+    $VCFVersion = $null
+}
 
-$srcNotificationScript = "vcf-bringup-notification.sh"
-$dstNotificationScript = "/root/vcf-bringup-notification.sh"
+if ($null -eq $VCFVersion) {
+    Write-Host -ForegroundColor Red "`nOnly VCF 5.1.0, 5.1.1 & 5.2 is currently supported ...`n"
+    exit
+}
 
-$StartTime = Get-Date
-
- 
-
- 
-if ($credentialsreCheck -eq 1) {
-    # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
-    if ($CloudBuilderOVA -match "5.2.0") {
-        $VCFVersion = "5.2.0"
-    }
-    elseif ($CloudBuilderOVA -match "5.1.1") {
-        $VCFVersion = "5.1.1"
-    }
-    elseif ($CloudBuilderOVA -match "5.1.0") {
-        $VCFVersion = "5.1.0"
-    }
-    else {
-        $VCFVersion = $null
-    }
-
-    if ($null -eq $VCFVersion) {
-        Write-Host -ForegroundColor Red "`nOnly VCF 5.1.0, 5.1.1 & 5.2 is currently supported ...`n"
-        exit
-    }
-
-    if ($VCFVersion -ge "5.2.0") {
-        write-host "here"
-        if ( $CloudbuilderAdminPassword.ToCharArray().count -lt 15 -or $CloudbuilderRootPassword.ToCharArray().count -lt 15) {
-            Write-Host -ForegroundColor Red "`nCloud Builder passwords must be 15 characters or longer ...`n"
-            exit
-        }
-    }
-
-    if (!(Test-Path $NestedESXiApplianceOVA)) {
-        Write-Host -ForegroundColor Red "`nUnable to find $NestedESXiApplianceOVA ...`n"
-        exit
-    }
-
-    if (!(Test-Path $CloudBuilderOVA)) {
-        Write-Host -ForegroundColor Red "`nUnable to find $CloudBuilderOVA ...`n"
-        exit
-    }
-
-    if ($PSVersionTable.PSEdition -ne "Core") {
-        Write-Host -ForegroundColor Red "`tPowerShell Core was not detected, please install that before continuing ... `n"
+if ($VCFVersion -ge "5.2.0") {
+    write-host "here"
+    if ( $CloudbuilderAdminPassword.ToCharArray().count -lt 15 -or $CloudbuilderRootPassword.ToCharArray().count -lt 15) {
+        Write-Host -ForegroundColor Red "`nCloud Builder passwords must be 15 characters or longer ...`n"
         exit
     }
 }
+
+if (!(Test-Path $NestedESXiApplianceOVA)) {
+    Write-Host -ForegroundColor Red "`nUnable to find $NestedESXiApplianceOVA ...`n"
+    exit
+}
+
+if (!(Test-Path $CloudBuilderOVA)) {
+    Write-Host -ForegroundColor Red "`nUnable to find $CloudBuilderOVA ...`n"
+    exit
+}
+
+if ($PSVersionTable.PSEdition -ne "Core") {
+    Write-Host -ForegroundColor Red "`tPowerShell Core was not detected, please install that before continuing ... `n"
+    exit
+} 
 
 if ($confirmDeployment -eq 1) {
     Write-Host -ForegroundColor Magenta "`nPlease confirm the following configuration will be deployed:`n"
@@ -677,21 +657,7 @@ if ($confirmDeployment -eq 1) {
         Write-Host -ForegroundColor White "$NestedESXiMGMTCapacityvDisk GB"
     }
 
-    if ($deployNestedESXiVMsForWLD -eq 1) {
-        Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Workload Domain ----"
-        Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
-        Write-Host -ForegroundColor White $NestedESXiHostnameToIPsForWorkloadDomain.count
-        Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
-        Write-Host -ForegroundColor White $NestedESXiHostnameToIPsForWorkloadDomain.Values
-        Write-Host -NoNewline -ForegroundColor Green "vCPU: "
-        Write-Host -ForegroundColor White $NestedESXiWLDvCPU
-        Write-Host -NoNewline -ForegroundColor Green "vMEM: "
-        Write-Host -ForegroundColor White "$NestedESXiWLDvMEM GB"
-        Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
-        Write-Host -ForegroundColor White "$NestedESXiWLDCachingvDisk GB"
-        Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
-        Write-Host -ForegroundColor White "$NestedESXiWLDCapacityvDisk GB"
-    }
+    
 
     Write-Host -NoNewline -ForegroundColor Green "`nNetmask "
     Write-Host -ForegroundColor White $VMNetmask
@@ -803,72 +769,6 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
 
             Write-Logger "Updating vSAN Boot Disk size to $NestedESXiMGMTBootDisk GB ..."
             Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $NestedESXiMGMTBootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
-            Write-Logger "Powering On $vmname ..."
-            $vm | Start-Vm -RunAsync | Out-Null
-            
-        })
-}
-
-if ($deployNestedESXiVMsForWLD -eq 1) {
-    $answer = ""
-    $NestedESXiHostnameToIPsForWorkloadDomain.GetEnumerator().foreach({ 
-            $VMName = $_.Key
-            $VMIPAddress = $_.Value
-            
-            $vm = Get-VM -Name $_.Key -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
-
-            $redeploy, $answer = Test-VMForReImport -Vm $vm -Answer $answer
-
-            if (! $redeploy) {
-                return
-            }
-            
-            $ovfconfig = Get-OvfConfiguration $NestedESXiApplianceOVA
-            $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
-            $ovfconfig.NetworkMapping.$networkMapLabel.value = $ESXVMNetwork1
-            $ovfconfig.common.guestinfo.hostname.value = "$VMName.$domain"
-            $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
-            $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
-            $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-            $ovfconfig.common.guestinfo.dns.value = $nameServers
-            $ovfconfig.common.guestinfo.domain.value = $domain
-            $ovfconfig.common.guestinfo.ntp.value = $ntpServers -join ","
-            $ovfconfig.common.guestinfo.syslog.value = $VMSyslog
-            $ovfconfig.common.guestinfo.password.value = $VMPassword
-            $ovfconfig.common.guestinfo.ssh.value = $true
-
-            Write-Logger "Deploying Nested ESXi VM $VMName ..."
-            $vm = Import-VApp -Source $NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
-
-            Write-Logger "Adding vmnic2/vmnic3 to Nested ESXi VMs ..."
-            $vmPortGroup = Get-VirtualNetwork -Name $ESXVMNetwork2 -Location ($cluster | Get-Datacenter)
-            if ($vmPortGroup.NetworkType -eq "Distributed") {
-                $vmPortGroup = Get-VDPortgroup -Name $ESXVMNetwork2
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            }
-            else {
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            }
-
-            $vm | New-AdvancedSetting -name "ethernet2.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-            $vm | New-AdvancedSetting -Name "ethernet2.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-
-            $vm | New-AdvancedSetting -name "ethernet3.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-            $vm | New-AdvancedSetting -Name "ethernet3.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-
-            Write-Logger "Updating vCPU Count to $NestedESXiWLDvCPU & vMEM to $NestedESXiWLDvMEM GB ..."
-            Set-VM -Server $viConnection -VM $vm -NumCpu $NestedESXiWLDvCPU -CoresPerSocket $NestedESXiWLDvCPU -MemoryGB $NestedESXiWLDvMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
-            Write-Logger "Updating vSAN Cache VMDK size to $NestedESXiWLDCachingvDisk GB & Capacity VMDK size to $NestedESXiWLDCapacityvDisk GB ..."
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $NestedESXiWLDCachingvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $NestedESXiWLDCapacityvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
-            Write-Logger "Updating vSAN Boot Disk size to $NestedESXiWLDBootDisk GB ..."
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $NestedESXiWLDBootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
             # vSAN ESA requires NVMe Controller
             if ($vSanEsa) {
                 Write-Logger "Updating storage controller to NVMe for vSAN ESA ..."
@@ -878,13 +778,13 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
 
                 # Reconfigure 1 - Add NVMe Controller & Update Disk Mapping to new controller
                 $deviceChanges = @()
-                $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
+                $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
 
                 $scsiController = $devices | Where-Object { $_.getType().Name -eq "ParaVirtualSCSIController" }
                 $scsiControllerDisks = $scsiController.device
 
-                $nvmeControllerAddSpec = New-Object VMware.Vim.VirtualDeviceConfigSpec
-                $nvmeControllerAddSpec.Device = New-Object VMware.Vim.VirtualNVMEController
+                $nvmeControllerAddSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
+                $nvmeControllerAddSpec.Device = [VMware.Vim.VirtualNVMEController]::new()
                 $nvmeControllerAddSpec.Device.Key = $newControllerKey
                 $nvmeControllerAddSpec.Device.BusNumber = 0
                 $nvmeControllerAddSpec.Operation = 'add'
@@ -893,7 +793,7 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
                 foreach ($scsiControllerDisk in $scsiControllerDisks) {
                     $device = $devices | Where-Object { $_.key -eq $scsiControllerDisk }
 
-                    $changeControllerSpec = New-Object VMware.Vim.VirtualDeviceConfigSpec
+                    $changeControllerSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
                     $changeControllerSpec.Operation = 'edit'
                     $changeControllerSpec.Device = $device
                     $changeControllerSpec.Device.key = $device.key
@@ -909,8 +809,8 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
                 $task1 | Wait-Task | Out-Null
 
                 # Reconfigure 2 - Remove PVSCSI Controller
-                $spec = New-Object VMware.Vim.VirtualMachineConfigSpec
-                $scsiControllerRemoveSpec = New-Object VMware.Vim.VirtualDeviceConfigSpec
+                $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
+                $scsiControllerRemoveSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
                 $scsiControllerRemoveSpec.Operation = 'remove'
                 $scsiControllerRemoveSpec.Device = $scsiController
                 $spec.deviceChange = $scsiControllerRemoveSpec
@@ -919,9 +819,9 @@ if ($deployNestedESXiVMsForWLD -eq 1) {
                 $task1 = Get-Task -Id ("Task-$($task.value)")
                 $task1 | Wait-Task | Out-Null
             }
-
             Write-Logger "Powering On $vmname ..."
             $vm | Start-Vm -RunAsync | Out-Null
+            
         })
 }
 
@@ -950,345 +850,13 @@ if ($deployCloudBuilder -eq 1) {
         $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $CloudbuilderRootPassword
 
         Write-Logger "Deploying Cloud Builder VM $CloudbuilderVMHostname ..."
-        $vm = Import-VApp -Source $CloudBuilderOVA -OvfConfiguration $ovfconfig -Name $CloudbuilderVMHostname -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
+        $CloudbuilderVM = Import-VApp -Source $CloudBuilderOVA -OvfConfiguration $ovfconfig -Name $CloudbuilderVMHostname -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
 
         Write-Logger "Powering On $CloudbuilderVMHostname ..."
-        $vm | Start-Vm -RunAsync | Out-Null
+        $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
-} 
-<# 
-if ($generateMgmJson -eq 1) {
-    if ($SeparateNSXSwitch) { $useNSX = "false" } else { $useNSX = "true" }
-
-    $esxivMotionNetwork = $NestedESXivMotionNetwork_subnet.split("/")[0]
-    $esxivMotionNetworkOctects = $esxivMotionNetwork.split(".")
-    $esxivMotionGateway = ($esxivMotionNetworkOctects[0..2] -join '.') + ".1"
-    $NestedESXivMotionRangeStart = ($esxivMotionNetworkOctects[0..2] -join '.') + ".101"
-    $NestedESXivMotionRangeEnd = ($esxivMotionNetworkOctects[0..2] -join '.') + ".118"
-
-    $esxivSANNetwork = $NestedESXivSANNetworkCidr.split("/")[0]
-    $esxivSANNetworkOctects = $esxivSANNetwork.split(".")
-    $esxivSANGateway = ($esxivSANNetworkOctects[0..2] -join '.') + ".1"
-    $esxivSANStart = ($esxivSANNetworkOctects[0..2] -join '.') + ".101"
-    $esxivSANEnd = ($esxivSANNetworkOctects[0..2] -join '.') + ".118"
-
-    $esxiNSXTepNetwork = $NestedESXiNSXTepNetworkCidr.split("/")[0]
-    $esxiNSXTepNetworkOctects = $esxiNSXTepNetwork.split(".")
-    $esxiNSXTepGateway = ($esxiNSXTepNetworkOctects[0..2] -join '.') + ".1"
-    $esxiNSXTepStart = ($esxiNSXTepNetworkOctects[0..2] -join '.') + ".101"
-    $esxiNSXTepEnd = ($esxiNSXTepNetworkOctects[0..2] -join '.') + ".118"
-
-    $hostSpecs = @()
-    $count = 1
-    $NestedESXiHostnameToIPsForManagementDomain.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
-        $VMName = $_.Key
-        $VMIPAddress = $_.Value
-
-        $hostSpec = [ordered]@{
-            "association"      = "vcf-m01-dc01"
-            "ipAddressPrivate" = [ordered]@{
-                "ipAddress" = $VMIPAddress
-                "cidr"      = $NestedESXiManagementNetwork_subnet
-                "gateway"   = $NestedESXiManagementNetwork_gateway
-            }
-            "hostname"         = $VMName
-            "credentials"      = [ordered]@{
-                "username" = "root"
-                "password" = $VMPassword
-            }
-            "sshThumbprint"    = "SHA256:DUMMY_VALUE"
-            "sslThumbprint"    = "SHA25_DUMMY_VALUE"
-            "vSwitch"          = "vSwitch0"
-            "serverId"         = "host-$count"
-        }
-        $hostSpecs += $hostSpec
-        $count++
-    }
-
-    $vcfConfig = [ordered]@{
-        "skipEsxThumbprintValidation" = $true
-        "managementPoolName"          = $VCFManagementDomainPoolName
-        "sddcId"                      = "vcf-m01"
-        "taskName"                    = "workflowconfig/workflowspec-ems.json"
-        "esxLicense"                  = "$ESXILicense"
-        "ceipEnabled"                 = $true
-        "ntpServers"                  = @($ntpServers)
-        "dnsSpec"                     = [ordered]@{
-            "subdomain"  = $domain
-            "domain"     = $domain
-            "nameserver" = $nameServers
-        }
-        "sddcManagerSpec"             = [ordered]@{
-            "ipAddress"             = $SddcManagerIP
-            "netmask"               = $VMNetmask
-            "hostname"              = $SddcManagerHostname
-            "localUserPassword"     = "$SddcManagerLocalPassword"
-            "vcenterId"             = "vcenter-1"
-            "secondUserCredentials" = [ordered]@{
-                "username" = "vcf"
-                "password" = $SddcManagerVcfPassword
-            }
-            "rootUserCredentials"   = [ordered]@{
-                "username" = "root"
-                "password" = $SddcManagerRootPassword
-            }
-            "restApiCredentials"    = [ordered]@{
-                "username" = "admin"
-                "password" = $SddcManagerRestPassword
-            }
-        }
-        "networkSpecs"                = @(
-            [ordered]@{
-                "networkType"    = "MANAGEMENT"
-                "subnet"         = $NestedESXiManagementNetwork_subnet
-                "gateway"        = $NestedESXiManagementNetwork_gateway
-                "vlanId"         = $NestedESXiManagementNetwork_vLanId
-                "mtu"            = $NestedESXivMotionNetwork_Mtu
-                "portGroupKey"   = $NestedESXivMotionNetwork_portGroupKey
-                "standbyUplinks" = @()
-                "activeUplinks"  = @("uplink1", "uplink2")
-            }
-            [ordered]@{
-                "networkType"            = "VMOTION"
-                "subnet"                 = $NestedESXivMotionNetwork_subnet
-                "gateway"                = $NestedESXivMotionNetwork_gateway
-                "vlanId"                 = $NestedESXivMotionNetwork_vLanId
-                "mtu"                    = $NestedESXivMotionNetwork_Mtu
-                "portGroupKey"           = $NestedESXivMotionNetwork_portGroupKey
-                "association"            = "vcf-m01-dc01"
-                "includeIpAddressRanges" = @(@{"startIpAddress" = $NestedESXivMotionRangeStart; "endIpAddress" = $NestedESXivMotionRangeEnd })
-                "standbyUplinks"         = @()
-                "activeUplinks"          = @("uplink1", "uplink2")
-            }
-            [ordered]@{
-                "networkType"            = "VSAN"
-                "subnet"                 = $NestedESXivSanNetwork_subnet
-                "gateway"                = $NestedESXivSanNetwork_gateway
-                "vlanId"                 = $NestedESXivSanNetwork_vLanId
-                "mtu"                    = $NestedESXivSanNetwork_Mtu
-                "portGroupKey"           = $NestedESXivSanNetwork_portGroupKey
-                "includeIpAddressRanges" = @(@{"startIpAddress" = $NestedESXivSanRangeStart; "endIpAddress" = $NestedESXivSanRangeEnd })
-                "standbyUplinks"         = @()
-                "activeUplinks"          = @("uplink1", "uplink2")
-            }
-        )
-        "nsxtSpec"                    = [ordered]@{
-            "nsxtManagerSize"                = "small"
-            "nsxtManagers"                   = @(@{"hostname" = $NSXManagerNode1Hostname; "ip" = $NSXManagerNode1IP })
-            "rootNsxtManagerPassword"        = $NSXRootPassword
-            "nsxtAdminPassword"              = $NSXAdminPassword
-            "nsxtAuditPassword"              = $NSXAuditPassword
-            "rootLoginEnabledForNsxtManager" = $true
-            "sshEnabledForNsxtManager"       = $true
-            "overLayTransportZone"           = [ordered]@{
-                "zoneName"    = "vcf-m01-tz-overlay01"
-                "networkName" = "netName-overlay"
-            }
-            "vlanTransportZone"              = [ordered]@{
-                "zoneName"    = "vcf-m01-tz-vlan01"
-                "networkName" = "netName-vlan"
-            }
-            "vip"                            = $NSXManagerVIPIP
-            "vipFqdn"                        = $NSXManagerVIPHostname
-            "nsxtLicense"                    = $NSXLicense
-            "transportVlanId"                = $NestedESXiNSXTepNetwork_vLanId
-            "ipAddressPoolSpec"              = [ordered]@{
-                "name"        = "vcf-m01-c101-tep01"
-                "description" = "ESXi Host Overlay TEP IP Pool"
-                "subnets"     = @(
-                    @{
-                        "ipAddressPoolRanges" = @(@{"start" = $esxiNSXTepStart; "end" = $esxiNSXTepEnd })
-                        "cidr"                = $NestedESXiNSXTepNetworkCidr
-                        "gateway"             = $esxiNSXTepGateway
-                    }
-                )
-            }
-        }
-        "vsanSpec"                    = [ordered]@{
-            "vsanName"      = "vsan-1"
-            "vsanDedup"     = "false"
-            "licenseFile"   = $VSANLicense
-            "datastoreName" = "vcf-m01-cl01-ds-vsan01"
-        }
-        "dvSwitchVersion"             = "8.0.0"
-        "dvsSpecs"                    = @(
-            [ordered]@{
-                "dvsName"      = "vcf-m01-cl01-vds01"
-                "vcenterId"    = "vcenter-1"
-                "vmnics"       = @("vmnic0", "vmnic1")
-                "mtu"          = "9000"
-                "networks"     = @(
-                    "MANAGEMENT",
-                    "VMOTION",
-                    "VSAN"
-                )
-                "niocSpecs"    = @(
-                    @{"trafficType" = "VSAN"; "value" = "HIGH" }
-                    @{"trafficType" = "VMOTION"; "value" = "LOW" }
-                    @{"trafficType" = "VDP"; "value" = "LOW" }
-                    @{"trafficType" = "VIRTUALMACHINE"; "value" = "HIGH" }
-                    @{"trafficType" = "MANAGEMENT"; "value" = "NORMAL" }
-                    @{"trafficType" = "NFS"; "value" = "LOW" }
-                    @{"trafficType" = "HBR"; "value" = "LOW" }
-                    @{"trafficType" = "FAULTTOLERANCE"; "value" = "LOW" }
-                    @{"trafficType" = "ISCSI"; "value" = "LOW" }
-                )
-                "isUsedByNsxt" = $useNSX
-            }
-        )
-        "clusterSpec"                 = [ordered]@{
-            "clusterName"         = "vcf-m01-cl01"
-            "vcenterName"         = "vcenter-1"
-            "clusterEvcMode"      = $ClusterEvcMode
-            "vmFolders"           = [ordered] @{
-                "MANAGEMENT" = "vcf-m01-fd-mgmt"
-                "NETWORKING" = "vcf-m01-fd-nsx"
-                "EDGENODES"  = "vcf-m01-fd-edge"
-            }
-            "clusterImageEnabled" = $EnableVCLM
-        }
-        "resourcePoolSpecs"           = @(
-            [ordered]@{
-                "name"                        = "vcf-m01-cl01-rp-sddc-mgmt"
-                "type"                        = "management"
-                "cpuReservationPercentage"    = 0
-                "cpuLimit"                    = -1
-                "cpuReservationExpandable"    = $true
-                "cpuSharesLevel"              = "normal"
-                "cpuSharesValue"              = 0
-                "memoryReservationMb"         = 0
-                "memoryLimit"                 = -1
-                "memoryReservationExpandable" = $true
-                "memorySharesLevel"           = "normal"
-                "memorySharesValue"           = 0
-            }
-            [ordered]@{
-                "name"                        = "vcf-m01-cl01-rp-sddc-edge"
-                "type"                        = "network"
-                "cpuReservationPercentage"    = 0
-                "cpuLimit"                    = -1
-                "cpuReservationExpandable"    = $true
-                "cpuSharesLevel"              = "normal"
-                "cpuSharesValue"              = 0
-                "memoryReservationPercentage" = 0
-                "memoryLimit"                 = -1
-                "memoryReservationExpandable" = $true
-                "memorySharesLevel"           = "normal"
-                "memorySharesValue"           = 0
-            }
-            [ordered]@{
-                "name"                        = "vcf-m01-cl01-rp-user-edge"
-                "type"                        = "compute"
-                "cpuReservationPercentage"    = 0
-                "cpuLimit"                    = -1
-                "cpuReservationExpandable"    = $true
-                "cpuSharesLevel"              = "normal"
-                "cpuSharesValue"              = 0
-                "memoryReservationPercentage" = 0
-                "memoryLimit"                 = -1
-                "memoryReservationExpandable" = $true
-                "memorySharesLevel"           = "normal"
-                "memorySharesValue"           = 0
-            }
-            [ordered]@{
-                "name"                        = "vcf-m01-cl01-rp-user-vm"
-                "type"                        = "compute"
-                "cpuReservationPercentage"    = 0
-                "cpuLimit"                    = -1
-                "cpuReservationExpandable"    = $true
-                "cpuSharesLevel"              = "normal"
-                "cpuSharesValue"              = 0
-                "memoryReservationPercentage" = 0
-                "memoryLimit"                 = -1
-                "memoryReservationExpandable" = $true
-                "memorySharesLevel"           = "normal"
-                "memorySharesValue"           = 0
-            }
-        )
-        "pscSpecs"                    = @(
-            [ordered]@{
-                "pscId"                = "psc-1"
-                "vcenterId"            = "vcenter-1"
-                "adminUserSsoPassword" = $VCSASSOPassword
-                "pscSsoSpec"           = @{"ssoDomain" = "vsphere.local" }
-            }
-        )
-        "vcenterSpec"                 = [ordered]@{
-            "vcenterIp"           = $VCSAIP
-            "vcenterHostname"     = $VCSAName
-            "vcenterId"           = "vcenter-1"
-            "licenseFile"         = $VCSALicense
-            "vmSize"              = "tiny"
-            "storageSize"         = ""
-            "rootVcenterPassword" = $VCSARootPassword
-        }
-        "hostSpecs"                   = $hostSpecs
-        "excludedComponents"          = @("NSX-V", "AVN", "EBGP")
-    }
-
-    if ($SeparateNSXSwitch) {
-        $sepNsxSwitchSpec = [ordered]@{
-            "dvsName"      = "vcf-m01-nsx-vds01"
-            "vcenterId"    = "vcenter-1"
-            "vmnics"       = @("vmnic2", "vmnic3")
-            "mtu"          = 9000
-            "networks"     = @()
-            "isUsedByNsxt" = $true
-
-        }
-        $vcfConfig.dvsSpecs += $sepNsxSwitchSpec
-    }
-
-    # License Later feature only applicable for VCF 5.1.1 and later
-    if ($VCFVersion -ge "5.1.1") {
-        if ($VCSALicense -eq "" -and $ESXILicense -eq "" -and $VSANLicense -eq "" -and $NSXLicense -eq "") {
-            $deployWithoutLicenseKeys = $true
-        }
-        else {
-            $deployWithoutLicenseKeys = $false
-        }
-        $vcfConfig.add("deployWithoutLicenseKeys", $deployWithoutLicenseKeys)
-    }
-
-    Write-Logger "Generating Cloud Builder VCF Management Domain configuration deployment file $VCFManagementDomainJSONFile"
-    $vcfConfig | ConvertTo-Json -Depth 20 | Out-File -LiteralPath $VCFManagementDomainJSONFile
 }
 
-if ($generateWldHostCommissionJson -eq 1) {
-    Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
-
-    $commissionHostsUI = @()
-    $commissionHostsAPI = @()
-    $NestedESXiHostnameToIPsForWorkloadDomain.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
-        $hostFQDN = $_.Key + "." + $domain
-
-        $tmp1 = [ordered] @{
-            "hostfqdn"        = $hostFQDN;
-            "username"        = "root";
-            "password"        = $VMPassword;
-            "networkPoolName" = "$VCFManagementDomainPoolName";
-            "storageType"     = "VSAN";
-        }
-        $commissionHostsUI += $tmp1
-
-        $tmp2 = [ordered] @{
-            "fqdn"          = $hostFQDN;
-            "username"      = "root";
-            "password"      = $VMPassword;
-            "networkPoolId" = "TBD";
-            "storageType"   = "VSAN";
-        }
-        $commissionHostsAPI += $tmp2
-    }
-
-    $vcfCommissionHostConfigUI = @{
-        "hostsSpec" = $commissionHostsUI
-    }
-
-    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
-    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
-}
-#>
 if ($startVCFBringup -eq 1) {
     Write-Logger "Starting VCF Deployment Bringup ..."
 
@@ -1316,19 +884,22 @@ if ($startVCFBringup -eq 1) {
         }
     }
     $adminPwd = ConvertTo-SecureString $CloudbuilderAdminPassword -AsPlainText -Force
-    $cred = New-Object Management.Automation.PSCredential ($CloudbuilderAdminUsername, $adminPwd)
+    $cred = [Management.Automation.PSCredential]::new($CloudbuilderAdminUsername, $adminPwd)
 
     if ($hclFile) {
-        $hclFileName = Split-Path -Path $hclFile -Leaf
-        $hclFiledest=Split-Path -Path $hclFile
-        Write-Logger "SCP HCL ($hclFileName) file to $hclFile ..."
-        Set-SCPItem    -ComputerName $CloudbuilderIP -Credential $cred -Path ".\$hclFileName" -Destination $hclFiledest -AcceptKey
+        if ($UseSSH.isPresent) {
+            $hclFiledest = Split-Path -Path $hclFile
+            Write-Logger "SCP HCL ($HCLJsonFile) file to $hclFile ..."
+            Set-SCPItem -ComputerName $CloudbuilderIP -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
+        }
+        Write-Logger "Copy-VMGuestFile HCL ($HCLJsonFile) file to $hclFile ..."
+        Copy-VMGuestFile -Source $HCLJsonFile -Destination $hclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest 
     }
     Write-Logger "Submitting VCF Bringup request ..."
 
     $inputJson = $orderedHashTable | convertto-json  -Depth 10 #Get-Content -Raw $VCFManagementDomainJSONFile
 
-    $inputJson | out-file 's.json'
+    $inputJson | out-file "$VAppName.json'
    
     $bringupAPIParms = @{
         Uri         = "https://${CloudbuilderIP}/v1/sddcs"
