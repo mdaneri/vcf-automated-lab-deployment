@@ -123,6 +123,64 @@
     "hclFile": "/home/admin/nested-esxi-vsan-esa-hcl.json",
     "datastoreName": "sfo-m01-cluster-001-vsan"
   },
+  "resourcePoolSpecs": [
+    {
+      "memoryReservationExpandable": true,
+      "cpuSharesLevel": "normal",
+      "cpuSharesValue": 0,
+      "memorySharesValue": 0,
+      "memoryLimit": -1,
+      "name": "vcf-m01-cl01-rp-sddc-mgmt",
+      "cpuLimit": -1,
+      "memoryReservationMb": 0,
+      "type": "management",
+      "memorySharesLevel": "normal",
+      "cpuReservationPercentage": 0,
+      "cpuReservationExpandable": true
+    },
+    {
+      "memoryReservationExpandable": true,
+      "cpuSharesLevel": "normal",
+      "cpuSharesValue": 0,
+      "memorySharesValue": 0,
+      "memoryLimit": -1,
+      "name": "vcf-m01-cl01-rp-sddc-edge",
+      "cpuLimit": -1,
+      "type": "network",
+      "memorySharesLevel": "normal",
+      "cpuReservationPercentage": 0,
+      "memoryReservationPercentage": 0,
+      "cpuReservationExpandable": true
+    },
+    {
+      "memoryReservationExpandable": true,
+      "cpuSharesLevel": "normal",
+      "cpuSharesValue": 0,
+      "memorySharesValue": 0,
+      "memoryLimit": -1,
+      "name": "vcf-m01-cl01-rp-user-edge",
+      "cpuLimit": -1,
+      "type": "compute",
+      "memorySharesLevel": "normal",
+      "cpuReservationPercentage": 0,
+      "memoryReservationPercentage": 0,
+      "cpuReservationExpandable": true
+    },
+    {
+      "memoryReservationExpandable": true,
+      "cpuSharesLevel": "normal",
+      "cpuSharesValue": 0,
+      "memorySharesValue": 0,
+      "memoryLimit": -1,
+      "name": "vcf-m01-cl01-rp-user-vm",
+      "cpuLimit": -1,
+      "type": "compute",
+      "memorySharesLevel": "normal",
+      "cpuReservationPercentage": 0,
+      "memoryReservationPercentage": 0,
+      "cpuReservationExpandable": true
+    }
+  ],
   "dvsSpecs": [
     {
       "dvsName": "sfo-m01-cluster-001-vds-001",
@@ -219,46 +277,62 @@
     {
       "association": "sfo-m01-datacenter",
       "ipAddressPrivate": {
-        "ipAddress": "192.168.10.100"
+        "ipAddress": "192.168.10.100",
+        "cidr": "192.168.10.0/24",
+        "gateway": "192.168.10.254"
       },
       "hostname": "vcf42-esx01",
       "credentials": {
         "username": "root",
         "password": "Pata2Pata1Pata!"
-      }
+      },
+      "vSwitch": "vSwitch0",
+      "serverId": "host-1"
     },
     {
       "association": "sfo-m01-datacenter",
       "ipAddressPrivate": {
-        "ipAddress": "192.168.10.101"
+        "ipAddress": "192.168.10.101",
+        "cidr": "192.168.10.0/24",
+        "gateway": "192.168.10.254"
       },
       "hostname": "vcf42-esx02",
       "credentials": {
         "username": "root",
         "password": "Pata2Pata1Pata!"
-      }
+      },
+      "vSwitch": "vSwitch0",
+      "serverId": "host-2"
     },
     {
       "association": "sfo-m01-datacenter",
       "ipAddressPrivate": {
-        "ipAddress": "192.168.10.102"
+        "ipAddress": "192.168.10.102",
+        "cidr": "192.168.10.0/24",
+        "gateway": "192.168.10.254"
       },
       "hostname": "vcf42-esx03",
       "credentials": {
         "username": "root",
         "password": "Pata2Pata1Pata!"
-      }
+      },
+      "vSwitch": "vSwitch0",
+      "serverId": "host-3"
     },
     {
       "association": "sfo-m01-datacenter",
       "ipAddressPrivate": {
-        "ipAddress": "192.168.10.103"
+        "ipAddress": "192.168.10.103",
+        "cidr": "192.168.10.0/24",
+        "gateway": "192.168.10.254"
       },
       "hostname": "vcf42-esx04",
       "credentials": {
         "username": "root",
         "password": "Pata2Pata1Pata!"
-      }
+      },
+      "vSwitch": "vSwitch0",
+      "serverId": "host-4"
     }
   ]
 }

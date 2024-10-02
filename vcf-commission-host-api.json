@@ -1,0 +1,30 @@
+[
+  {
+    "fqdn": "vcf-m01-esx05.tshirts.inc",
+    "username": "root",
+    "password": "VMware1!",
+    "networkPoolId": "TBD",
+    "storageType": "VSAN"
+  },
+  {
+    "fqdn": "vcf-m01-esx06.tshirts.inc",
+    "username": "root",
+    "password": "VMware1!",
+    "networkPoolId": "TBD",
+    "storageType": "VSAN"
+  },
+  {
+    "fqdn": "vcf-m01-esx07.tshirts.inc",
+    "username": "root",
+    "password": "VMware1!",
+    "networkPoolId": "TBD",
+    "storageType": "VSAN"
+  },
+  {
+    "fqdn": "vcf-m01-esx08.tshirts.inc",
+    "username": "root",
+    "password": "VMware1!",
+    "networkPoolId": "TBD",
+    "storageType": "VSAN"
+  }
+]
