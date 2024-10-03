@@ -6,7 +6,9 @@ param(
     [string]
     $VAppName,
     [switch]
-    $UseSSH
+    $UseSSH,
+    [switch]
+    $GenerateMgmJson
 )
 # Author: William Lam
 # Website: www.williamlam.com
@@ -38,16 +40,20 @@ $ESXVMNetwork2 = "Trunk"
 $VMDatastore = "vSanDatastore"
 $VMFolder = "VCF"
 
+ 
 
 # Nested ESXi VM Resources for Management Domain
 $NestedESXiMGMTvCPU = "12"
 $NestedESXiMGMTvMEM = "78" #GB
 $NestedESXiMGMTCachingvDisk = "4" #GB
 $NestedESXiMGMTCapacityvDisk = "500" #GB
+#ESA disks
+$NestedESXiESADisk1 = "500" #GB
+$NestedESXiESADisk2 = "500" #GB 
 $NestedESXiMGMTBootDisk = "32" #GB
 
-# Nested ESXi VM Resources for Workload Domain
-$vSanEsa = $true
+ 
+
 
   
 if ([string]::IsNullOrEmpty( $VAppName) ) {
@@ -109,14 +115,12 @@ $NestedESXiApplianceOVA = "./ova/Nested_ESXi8.0u3_Appliance_Template_v1.ova"
 $CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
 
 # VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
- 
-$credentialsreCheck = 1
+
 $confirmDeployment = 1
 $deployNestedESXiVMsForMgmt = 1
 $deployNestedESXiVMsForWLD = 0
 $deployCloudBuilder = 1
-$moveVMsIntovApp = 1
-$generateMgmJson = 1
+$moveVMsIntovApp = 1 
 $startVCFBringup = 1
 $generateWldHostCommissionJson = 0
 $uploadVCFNotifyScript = 0
@@ -180,6 +184,7 @@ $subdomain = $r2[3].P2
 $domain = $r2[3].P2
 
 $vSanEsa = ($r2[16].P2 -ieq 'yes')
+
 $skipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
 
 $hostSpecs = @()
@@ -651,10 +656,18 @@ if ($confirmDeployment -eq 1) {
         Write-Host -ForegroundColor White $NestedESXiMGMTvCPU
         Write-Host -NoNewline -ForegroundColor Green "vMEM: "
         Write-Host -ForegroundColor White "$NestedESXiMGMTvMEM GB"
-        Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
-        Write-Host -ForegroundColor White "$NestedESXiMGMTCachingvDisk GB"
-        Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
-        Write-Host -ForegroundColor White "$NestedESXiMGMTCapacityvDisk GB"
+        if ($vSanEsa) {
+            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 1 VMDK: "
+            Write-Host -ForegroundColor White "$NestedESXiESADisk1 GB"
+            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 2 VMDK: "
+            Write-Host -ForegroundColor White "$NestedESXiESADisk2 GB"
+        }
+        else {
+            Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
+            Write-Host -ForegroundColor White "$NestedESXiMGMTCachingvDisk GB"
+            Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
+            Write-Host -ForegroundColor White "$NestedESXiMGMTCapacityvDisk GB"
+        }
     }
 
     
@@ -763,14 +776,17 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
             Write-Logger "Updating vCPU Count to $NestedESXiMGMTvCPU & vMEM to $NestedESXiMGMTvMEM GB ..."
             Set-VM -Server $viConnection -VM $vm -NumCpu $NestedESXiMGMTvCPU -CoresPerSocket $NestedESXiMGMTvCPU -MemoryGB $NestedESXiMGMTvMEM -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
 
-            Write-Logger "Updating vSAN Cache VMDK size to $NestedESXiMGMTCachingvDisk GB & Capacity VMDK size to $NestedESXiMGMTCapacityvDisk GB ..."
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $NestedESXiMGMTCachingvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $NestedESXiMGMTCapacityvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+           
 
             Write-Logger "Updating vSAN Boot Disk size to $NestedESXiMGMTBootDisk GB ..."
             Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $NestedESXiMGMTBootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
             # vSAN ESA requires NVMe Controller
             if ($vSanEsa) {
+
+                Write-Logger "Updating vSAN Disk Capacity VMDK size to $NestedESXiESADisk1 GB  and $NestedESXiESADisk2 GB .."
+                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $NestedESXiESADisk1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $NestedESXiESADisk2 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+
                 Write-Logger "Updating storage controller to NVMe for vSAN ESA ..."
                 $devices = $vm.ExtensionData.Config.Hardware.Device
 
@@ -819,6 +835,13 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
                 $task1 = Get-Task -Id ("Task-$($task.value)")
                 $task1 | Wait-Task | Out-Null
             }
+            else {
+                Write-Logger "Updating vSAN Cache VMDK size to $NestedESXiMGMTCachingvDisk GB & Capacity VMDK size to $NestedESXiMGMTCapacityvDisk GB ..."
+                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $NestedESXiMGMTCachingvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $NestedESXiMGMTCapacityvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+            }
+
+
             Write-Logger "Powering On $vmname ..."
             $vm | Start-Vm -RunAsync | Out-Null
             
@@ -856,6 +879,7 @@ if ($deployCloudBuilder -eq 1) {
         $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
 }
+  
 
 if ($startVCFBringup -eq 1) {
     Write-Logger "Starting VCF Deployment Bringup ..."
@@ -887,6 +911,7 @@ if ($startVCFBringup -eq 1) {
     $cred = [Management.Automation.PSCredential]::new($CloudbuilderAdminUsername, $adminPwd)
 
     if ($hclFile) {
+        Start-Sleep 10
         if ($UseSSH.isPresent) {
             $hclFiledest = Split-Path -Path $hclFile
             Write-Logger "SCP HCL ($HCLJsonFile) file to $hclFile ..."
@@ -899,8 +924,10 @@ if ($startVCFBringup -eq 1) {
 
     $inputJson = $orderedHashTable | convertto-json  -Depth 10 #Get-Content -Raw $VCFManagementDomainJSONFile
 
-    $inputJson | out-file "$VAppName.json'
-   
+    if ($GenerateMgmJson.isPresent) {
+        $inputJson | out-file "$VAppName.json"
+    }
+
     $bringupAPIParms = @{
         Uri         = "https://${CloudbuilderIP}/v1/sddcs"
         Method      = 'POST'
@@ -908,9 +935,12 @@ if ($startVCFBringup -eq 1) {
         ContentType = 'application/json'
         Credential  = $cred
     }
+    Start-Sleep 10
     $bringupAPIReturn = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
     Write-Logger "Open browser to the VMware Cloud Builder UI (https://${CloudbuilderFQDN}) to monitor deployment progress ..."
 }
+
+
 
 if ($startVCFBringup -eq 1 -and $uploadVCFNotifyScript -eq 1) {
     if (Test-Path $srcNotificationScript) {
@@ -925,7 +955,7 @@ if ($startVCFBringup -eq 1 -and $uploadVCFNotifyScript -eq 1) {
     }
 }
 
-if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployNestedESXiVMsForWLD -eq 1 -or $deployCloudBuilder -eq 1) {
+if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployCloudBuilder -eq 1) {
     Write-Logger "Disconnecting from $VIServer ..."
     Disconnect-VIServer -Server $viConnection -Confirm:$false
 }
