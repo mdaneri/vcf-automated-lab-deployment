@@ -103,7 +103,7 @@ if (Test-Path $ExcelFile) {
 # 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
 # 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
 
-
+ 
 
 # vCenter Server used to deploy VMware Cloud Foundation Lab
 $VIServer = "vmw-vc01.lab.local"
@@ -129,78 +129,196 @@ $srcNotificationScript = "vcf-bringup-notification.sh"
 $dstNotificationScript = "/root/vcf-bringup-notification.sh"
 
 $StartTime = Get-Date
-
-$SiteCode = 'sfo-m01'
-$NestedESXiHostnameToIPsForManagementDomain = [ordered]@{
-    $esxImport[0].P1 = $esxImport[1].P1
-    $esxImport[0].P2 = $esxImport[1].P2
-    $esxImport[0].P3 = $esxImport[1].P3
-    $esxImport[0].P4 = $esxImport[1].P4
-}
  
-$hclFile = ($r2[17].P2 )?$r2[17].P2 :""
-$deployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
+ 
+ 
+ 
+ 
+        
+$inputData = [ordered]@{
+    SiteCode                 = 'sfo-m01'
+    DeployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
 
-$managementDatacenter = $r[18].P2 #Datacenter Name
-$managementPoolName = $r[37].P2 #Network Pool Name
+    Management               = [ordered]@{
+        Datacenter = $r[18].P2 #Datacenter Name
+        PoolName   = $r[37].P2 #Network Pool Name
+    }
+    # SDDC Manager Configuration
+    SddcManager              = [ordered]@{ 
+        Hostname = [ordered]@{ 
+            VcfPassword   = $credentialsImport[15].P2 #SDDC Manager Super User *
+            RootPassword  = $credentialsImport[14].P2 #SDDC Manager Appliance Root Account *
+            LocalPassword = $credentialsImport[16].P2 #SDDC Manager Local Account
+            Ip            = $r[36].P2
+            Hostname      = $r[35].P2
+        }
+    }
+ 
+    VCenter                  = [ordered]@{
+        Ip        = $r[13].P3
+        Hostname  = $r[13].P2   
+        License   = $licenseImport[3].P2      
+        Size      = [ordered]@{
+            Vm      = $r[14].P2
+            Storage = ($r[15].P2 -eq 'large')?"lstorage":(($r[15].P2 -eq 'xlarge')?"xlstorage":$null)
+        } 
+        Password  = [ordered]@{
+            Admin = $credentialsImport[7].P2 
+            Root  = $credentialsImport[8].P2
+        }
+        SsoDomain = "vsphere.local"
+    }
 
-# SDDC Manager Configuration
-$SddcManagerVcfPassword = $credentialsImport[15].P2 #SDDC Manager Super User *
-$SddcManagerRootPassword = $credentialsImport[14].P2 #SDDC Manager Appliance Root Account *
-$SddcManagerLocalPassword = $credentialsImport[16].P2 #SDDC Manager Local Account
-$SddcManagerIP = $r[36].P2
-$SddcManagerHostname = $r[35].P2
+    Cluster                  = [ordered]@{
+        Name         = $r[19].P2        
+        EvcMode      = ""#$r[21].P2
+        ImageEnabled = $r[20].P2 -eq 'yes'
+    }
 
-#networkSpecs
-$NestedESXiManagementNetwork_subnet = $mgmtNetworkImport[1].P4
-#$NestedESXiManagementNetwork_gateway
-$NestedESXiManagementNetwork_vLanId = "$($mgmtNetworkImport[1].P2)"
-$NestedESXiManagementNetwork_Mtu = "$($mgmtNetworkImport[1].P6)"
-$NestedESXiManagementNetwork_portGroupKey = $mgmtNetworkImport[1].P3
-$NestedESXiManagementNetwork_gateway = $mgmtNetworkImport[1].P5
+    NestedESXi               = [ordered]@{
+        Password                         = $credentialsImport[5].P2
+        HostnameToIPsForManagementDomain = [ordered]@{
+            $esxImport[0].P1 = $esxImport[1].P1
+            $esxImport[0].P2 = $esxImport[1].P2
+            $esxImport[0].P3 = $esxImport[1].P3
+            $esxImport[0].P4 = $esxImport[1].P4
+        }
+         
+    }
+    NetworkSpecs             = [ordered]@{
+        dnsSpec           = [ordered]@{
+            Subdomain   = $r2[3].P2
+            Domain      = $r2[3].P2
+            NameServers = $( 
+                $ns = @()
+                for ($i = 3; $i -le 4; $i++) {
+                    if ($r[$i].P2 -ne 'n/a') {
+                        $ns += $r[$i].P2
+                    }
+                }
+                $ns -join ','  # Join the array elements with a comma and return as the value
+            )
+        }
+        
+        NtpServers        = @(
+            $nt = @()
+            for ($i = 5; $i -le 6 ; $i++) {
+                if ($r[$i].P2 -ne 'n/a') {
+                    $nt += $r[$i].P2
+                }  
+            }
+            $nt
+        )
+ 
+        #networkSpecs
+        ManagementNetwork = [ordered]@{subnet = $mgmtNetworkImport[1].P4
+            vLanId                            = "$($mgmtNetworkImport[1].P2)"
+            Mtu                               = "$($mgmtNetworkImport[1].P6)"
+            portGroupKey                      = $mgmtNetworkImport[1].P3
+            gateway                           = $mgmtNetworkImport[1].P5
+        }
+        vMotionNetwork    = [ordered]@{
+            subnet       = $mgmtNetworkImport[2].P4
+            vLanId       = "$($mgmtNetworkImport[2].P2)"
+            Mtu          = "$($mgmtNetworkImport[2].P6)"
+            portGroupKey = $mgmtNetworkImport[2].P3
+            gateway      = $mgmtNetworkImport[2].P5
 
-$NestedESXivMotionNetwork_subnet = $mgmtNetworkImport[2].P4
-$NestedESXivMotionNetwork_vLanId = "$($mgmtNetworkImport[2].P2)"
-$NestedESXivMotionNetwork_Mtu = "$($mgmtNetworkImport[2].P6)"
-$NestedESXivMotionNetwork_portGroupKey = $mgmtNetworkImport[2].P3
-$NestedESXivMotionNetwork_gateway = $mgmtNetworkImport[2].P5
+            Range        = [ordered]@{ 
+                Start = $rangeImport[0].p2
+                End   = $rangeImport[0].p4
+            }
+        }
+        vSan              = [ordered]@{
+            subnet       = $mgmtNetworkImport[3].P4
+            vLanId       = "$($mgmtNetworkImport[3].P2)"
+            Mtu          = "$($mgmtNetworkImport[3].P6)"
+            portGroupKey = $mgmtNetworkImport[3].P3
+            gateway      = $mgmtNetworkImport[3].P5
+            Range        = [ordered]@{
+                Start = $rangeImport[1].p4
+                End   = $rangeImport[1].p2
+            }
+        }
+        VmManamegent      = @{
+            subnet       = $mgmtNetworkImport[0].P4
+            gateway      = $mgmtNetworkImport[0].P5
+            vlanId       = "$($mgmtNetworkImport[0].P2)"
+            mtu          = "$($mgmtNetworkImport[0].P6)"
+            portGroupKey = $mgmtNetworkImport[0].P3
+        }
+    }
 
-$NestedESXivMotionRangeStart = $rangeImport[0].p2
-$NestedESXivMotionRangeEnd = $rangeImport[0].p4
+    Nsxt                     = @{
+        Managers          = @(
+            for ($i = 30; $i -le 32; $i++) {
+                if ($r[$i].P2 -eq 'n/a') {
+                    continue
+                }
+                [ordered]@{
+                    hostname = $r[$i].P2
+                    ip       = $r[$i].P3
+                }
+            }
+        )
 
-$NestedESXivSanNetwork_subnet = $mgmtNetworkImport[3].P4
-$NestedESXivSanNetwork_vLanId = "$($mgmtNetworkImport[3].P2)"
-$NestedESXivSanNetwork_Mtu = "$($mgmtNetworkImport[3].P6)"
-$NestedESXivSanNetwork_portGroupKey = $mgmtNetworkImport[3].P3
-$NestedESXivSanNetwork_gateway = $mgmtNetworkImport[3].P5
+        Password          = @{
+            Root  = $credentialsImport[10].P2
+            Admin = $credentialsImport[11].P2
+            Audit = $credentialsImport[12].P2
+        }
+        ManagerSize       = $r[33].P2
+        vip               = $r[29].P3
+        vipFqdn           = $r[29].P2 
+        License           = $licenseImport[4].P2
+        TransportVlanId   = "$($overlayImport[0].P2)"
+        TransportType     = $dsImport[4].p2 
+        ipAddressPoolSpec = [ordered]@{
+            name        = $overlayImport[4].P2
+            description = $overlayImport[3].P2
+            subnets     = @(
+                [ordered]@{
+                    ipAddressPoolRanges = @(
+                        [ordered]@{
+                            start = $overlayImport[6].P2
+                            end   = $overlayImport[6].P4
+                        }
+                    )
+                    cidr                = $overlayImport[5].P2
+                    gateway             = $overlayImport[5].P4
+                }
+            )
+        }
+    }
+    vSan                     = @{
+        ESA           = ($r2[16].P2 -ieq 'yes')
+        LicenseFile   = $licenseImport[2].P2  
+        HclFile       = ($r2[17].P2 )?$r2[17].P2 :""
+        DatastoreName = $r2[14].P2
+        Dedup         = ($r2[15].P2 -ieq 'yes')
+    }
+} 
 
-$NestedESXivSanRangeStart = $rangeImport[1].p4
-$NestedESXivSanRangeEnd = $rangeImport[1].p2
-
-
-$VMPassword = $credentialsImport[5].P2
-$VMNetmask = ConvertTo-Netmask -NetworkCIDR $NestedESXiManagementNetwork_subnet
-$subdomain = $r2[3].P2
-$domain = $r2[3].P2
-
-$vSanEsa = ($r2[16].P2 -ieq 'yes')
+$VMNetmask = ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet
+ 
+ 
 
 $skipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
 
 $hostSpecs = @()
 $i = 3
-foreach ($key in $NestedESXiHostnameToIPsForManagementDomain.Keys ) {
+foreach ($key in $inputData.NestedESXi.HostnameToIPsForManagementDomain.Keys ) {
     $h = [ordered]@{
-        association      = $managementDatacenter
+        association      = $inputData.Management.Datacenter
         ipAddressPrivate = [ordered]@{
-            ipAddress = $NestedESXiHostnameToIPsForManagementDomain[$key]
-            cidr      = $NestedESXiManagementNetwork_subnet
-            gateway   = $NestedESXiManagementNetwork_gateway
+            ipAddress = $inputData.NestedESXi.HostnameToIPsForManagementDomain[$key]
+            cidr      = $inputData.NetworkSpecs.ManagementNetwork.subnet
+            gateway   = $inputData.NetworkSpecs.ManagementNetwork.gateway
         }
         hostname         = $key
         credentials      = [ordered]@{
             username = "root"
-            password = $VMPassword
+            password = $inputData.NestedESXi.Password
         } 
 
         vSwitch          = "vSwitch0"
@@ -215,84 +333,10 @@ foreach ($key in $NestedESXiHostnameToIPsForManagementDomain.Keys ) {
     $i++
 }
  
-
-
-#VMManagement
-$VmManamegent_subnet = $mgmtNetworkImport[0].P4
-$VmManamegent_gateway = $mgmtNetworkImport[0].P5
-$VmManamegent_vlanId = "$($mgmtNetworkImport[0].P2)"
-$VmManamegent_mtu = "$($mgmtNetworkImport[0].P6)"
-$VmManamegent_portGroupKey = $mgmtNetworkImport[0].P3
+ 
  
 
-#nsxt
-
-$nsxtManagers = @()
-for ($i = 30; $i -le 32; $i++) {
-    if ($r[30].P2 -eq 'n/a') {
-        continue
-    }
-    $nsxtManagers += [ordered]@{
-        hostname = $r[$i].P2
-        ip       = $r[$i].P3
-    }
-}
-
-$rootNsxtManagerPassword = $credentialsImport[10].P2
-$nsxtAdminPassword = $credentialsImport[11].P2
-$nsxtAuditPassword = $credentialsImport[12].P2
-$nsxtManagerSize = $r[33].P2
-$nsxtvip = $r[29].P3
-$nsxtvipFqdn = $r[29].P2 
-
  
-$ns = @()
-for ($i = 3; $i -le 4; $i++) {
-    if ($r[$i].P2 -ne 'n/a') {
-        $ns += $r[$i].P2
-    }  
-}
-
- 
-$nameServers = $ns -join ','
-
-$ntpServers = @()
-for ($i = 5; $i -le 6 ; $i++) {
-    if ($r[$i].P2 -ne 'n/a') {
-        $ntpServers += $r[$i].P2
-    }  
-}
-$nsxtLicense = $licenseImport[4].P2
-$nsxtTransportVlanId = "$($overlayImport[0].P2)"
-$nsxtipAddressPoolSpec = [ordered]@{
-    name        = $overlayImport[4].P2
-    description = $overlayImport[3].P2
-    subnets     = @(
-        [ordered]@{
-            ipAddressPoolRanges = @(
-                [ordered]@{
-                    start = $overlayImport[6].P2
-                    end   = $overlayImport[6].P4
-                }
-            )
-            cidr                = $overlayImport[5].P2
-            gateway             = $overlayImport[5].P4
-        }
-    )
-}
-
- 
-
-$vsanSpec = [ordered]@{
-    licenseFile   = $licenseImport[2].P2
-    vsanDedup     = (($vSanEsa)? $false : ($r2[15].P2 -ieq 'yes'))
-    esaConfig     = [ordered]@{
-        enabled = $vSanEsa
-    }
-    hclFile       = $hclFile 
-    datastoreName = $r2[14].P2
-}
-
 
 # VCF Configurations
 $VCFManagementDomainPoolName = "vcf-m01-rp01"
@@ -301,92 +345,96 @@ $VCFWorkloadDomainUIJSONFile = "vcf-commission-host-ui.json"
 $VCFWorkloadDomainAPIJSONFile = "vcf-commission-host-api.json"
 
 $orderedHashTable = [ordered]@{
-    deployWithoutLicenseKeys    = $deployWithoutLicenseKeys
+    deployWithoutLicenseKeys    = $inputData.deployWithoutLicenseKeys
     skipEsxThumbprintValidation = $skipEsxThumbprintValidation
-    managementPoolName          = $managementPoolName
+    managementPoolName          = $inputData.Management.PoolName
     sddcManagerSpec             = [ordered]@{
         secondUserCredentials = [ordered]@{
             username = "vcf"
-            password = $SddcManagerVcfPassword
+            password = $inputData.SddcManager.Hostname.VcfPassword
         }        
-        ipAddress             = $SddcManagerIP
-        hostname              = $SddcManagerHostname
+        ipAddress             = $inputData.SddcManager.Hostname.Ip
+        hostname              = $inputData.SddcManager.Hostname.Hostname
         rootUserCredentials   = [ordered]@{
             username = 'root'
-            password = $SddcManagerRootPassword
+            password = $inputData.SddcManager.Hostname.RootPassword
         }
-        localUserPassword     = $SddcManagerLocalPassword        
+        localUserPassword     = $inputData.SddcManager.Hostname.LocalPassword        
     }
     sddcId                      = $r[38].P2
     esxLicense                  = $licenseImport[1].P2
     workflowType                = "VCF"
     ceipEnabled                 = ($r2[5].P3 -ieq 'yes')
     fipsEnabled                 = ($r2[6].P3 -ieq 'yes')
-    ntpServers                  = $ntpServers
-    dnsSpec                     = [ordered]@{
-        subdomain  = $subdomain
-        domain     = $domain
-        nameserver = $nameServers
-    }
+    ntpServers                  = $inputdata.NetworkSpecs.NtpServers
+    dnsSpec                     = $inputData.NetworkSpecs.DnsSpec 
     networkSpecs                = @(
         [ordered]@{
             networkType  = "MANAGEMENT"
-            subnet       = $NestedESXiManagementNetwork_subnet
-            gateway      = $NestedESXiManagementNetwork_gateway
-            vlanId       = $NestedESXiManagementNetwork_vLanId
-            mtu          = $NestedESXiManagementNetwork_Mtu
-            portGroupKey = $NestedESXiManagementNetwork_portGroupKey    
+            subnet       = $inputData.NetworkSpecs.ManagementNetwork.subnet
+            gateway      = $inputData.NetworkSpecs.ManagementNetwork.gateway
+            vlanId       = $inputData.NetworkSpecs.ManagementNetwork.vLanId
+            mtu          = $inputData.NetworkSpecs.ManagementNetwork.Mtu
+            portGroupKey = $inputData.NetworkSpecs.ManagementNetwork.portGroupKey    
         }
         [ordered]@{
             networkType            = "VMOTION"
-            subnet                 = $NestedESXivMotionNetwork_subnet
-            gateway                = $NestedESXivMotionNetwork_gateway
-            vlanId                 = $NestedESXivMotionNetwork_vLanId
-            mtu                    = $NestedESXivMotionNetwork_Mtu
-            portGroupKey           = $NestedESXivMotionNetwork_portGroupKey
+            subnet                 = $inputData.NetworkSpecs.vMotionNetwork.subnet
+            gateway                = $inputData.NetworkSpecs.vMotionNetwork.gateway
+            vlanId                 = $inputData.NetworkSpecs.vMotionNetwork.vLanId
+            mtu                    = $inputData.NetworkSpecs.vMotionNetwork.Mtu
+            portGroupKey           = $inputData.NetworkSpecs.vMotionNetwork.portGroupKey
             includeIpAddressRanges = @(
                 [ordered]@{
-                    endIpAddress   = $NestedESXivMotionRangeEnd
-                    startIpAddress = $NestedESXivMotionRangeStart
+                    endIpAddress   = $inputData.NetworkSpecs.vMotionNetwork.Range.End
+                    startIpAddress = $inputData.NetworkSpecs.vMotionNetwork.Range.Start
                 }
             )
         }
         [ordered]@{
             networkType            = "VSAN"
-            subnet                 = $NestedESXivSanNetwork_subnet
-            gateway                = $NestedESXivSanNetwork_gateway
-            vlanId                 = $NestedESXivSanNetwork_vLanId
-            mtu                    = $NestedESXivSanNetwork_Mtu
-            portGroupKey           = $NestedESXivSanNetwork_portGroupKey
+            subnet                 = $inputData.NetworkSpecs.vSan.subnet
+            gateway                = $inputData.NetworkSpecs.vSan.gateway
+            vlanId                 = $inputData.NetworkSpecs.vSan.vLanId
+            mtu                    = $inputData.NetworkSpecs.vSan.Mtu
+            portGroupKey           = $inputData.NetworkSpecs.vSan.portGroupKey
             includeIpAddressRanges = @(
                 [ordered]@{
-                    endIpAddress   = $NestedESXivSanRangeStart
-                    startIpAddress = $NestedESXivSanRangeEnd
+                    endIpAddress   = $inputData.NetworkSpecs.vSan.Range.Start
+                    startIpAddress = $inputData.NetworkSpecs.vSan.Range.End
                 }
             )
         }
         [ordered]@{
             networkType  = "VM_MANAGEMENT"
-            subnet       = $VmManamegent_subnet
-            gateway      = $VmManamegent_gateway
-            vlanId       = $VmManamegent_vlanId
-            mtu          = $VmManamegent_mtu
-            portGroupKey = $VmManamegent_portGroupKey 
+            subnet       = $inputData.NetworkSpecs.VmManamegent.subnet
+            gateway      = $inputData.NetworkSpecs.VmManamegent.gateway
+            vlanId       = $inputData.NetworkSpecs.VmManamegent.vlanId
+            mtu          = $inputData.NetworkSpecs.VmManamegent.mtu
+            portGroupKey = $inputData.NetworkSpecs.VmManamegent.portGroupKey 
         }
     )
     nsxtSpec                    = [ordered]@{
-        nsxtManagerSize         = $nsxtManagerSize
-        nsxtManagers            = $nsxtManagers
-        rootNsxtManagerPassword = $rootNsxtManagerPassword
-        nsxtAdminPassword       = $nsxtAdminPassword
-        nsxtAuditPassword       = $nsxtAuditPassword
-        vip                     = $nsxtvip
-        vipFqdn                 = $nsxtvipFqdn
-        nsxtLicense             = $nsxtLicense
-        transportVlanId         = $nsxtTransportVlanId
-        ipAddressPoolSpec       = $nsxtipAddressPoolSpec
+        nsxtManagerSize         = $inputdata.Nsxt.ManagerSize
+        nsxtManagers            = $inputdata.Nsxt.Managers
+        rootNsxtManagerPassword = $inputdata.Nsxt.Password.Root
+        nsxtAdminPassword       = $inputdata.Nsxt.Password.Admin
+        nsxtAuditPassword       = $inputdata.Nsxt.Password.Audit
+        vip                     = $inputdata.Nsxt.vip
+        vipFqdn                 = $inputdata.Nsxt.vipFqdn
+        nsxtLicense             = $inputdata.Nsxt.License
+        transportVlanId         = $inputdata.Nsxt.TransportVlanId
+        ipAddressPoolSpec       = $inputdata.Nsxt.ipAddressPoolSpec
     }
-    vsanSpec                    = $vsanSpec
+    vsanSpec                    = [ordered]@{
+        licenseFile   = $inputdata.vSan.LicenseFile
+        vsanDedup     = (($inputdata.vSan.ESA)? $false : ($inputdata.vSan.Dedup))
+        esaConfig     = [ordered]@{
+            enabled = $inputdata.vSan.ESA
+        }
+        hclFile       = $inputdata.vSan.HclFile 
+        datastoreName = $inputdata.vSan.DatastoreName
+    }
 
     resourcePoolSpecs           = @( 
         @{
@@ -491,35 +539,35 @@ $orderedHashTable = [ordered]@{
                 }
             )
             nsxtSwitchConfig = [ordered]@{
-                transportZones = get-TransportZone -Type $dsImport[4].p2 
+                transportZones = get-TransportZone -Type $inputdata.Nsxt.TransportType -SiteCode $inputdata.SiteCode
             }
         }
     )
     clusterSpec                 = [ordered]@{
-        clusterName         = $r[19].P2        
-        clusterEvcMode      = $r[21].P2
-        clusterImageEnabled = $r[20].P2 -eq 'yes'
+        clusterName         = $inputdata.Cluster.Name     
+        clusterEvcMode      = $inputdata.Cluster.EvcMode
+        clusterImageEnabled = $inputdata.Cluster.ImageEnabled
         vmFolders           = [ordered]@{
-            MANAGEMENT = "$SiteCode-fd-mgmt"
-            NETWORKING = "$SiteCode-fd-nsx"
-            EDGENODES  = "$SiteCode-fd-edge"
+            MANAGEMENT = "$($inputdata.SiteCode)-fd-mgmt"
+            NETWORKING = "$($inputdata.SiteCode)-fd-nsx"
+            EDGENODES  = "$($inputdata.SiteCode)-fd-edge"
         } 
     }
     pscSpecs                    = @(
         [ordered]@{
-            adminUserSsoPassword = $credentialsImport[7].P2
+            adminUserSsoPassword = $inputdata.VCenter.Password.Admin
             pscSsoSpec           = [ordered]@{
-                ssoDomain = "vsphere.local"
+                ssoDomain = $inputdata.VCenter.SsoDomain 
             }
         }
     )
     vcenterSpec                 = [ordered]@{
-        vcenterIp           = $r[13].P3
-        vcenterHostname     = $r[13].P2   
-        licenseFile         = $licenseImport[3].P2      
-        vmSize              = $r[14].P2
-        storageSize         = ($r[15].P2 -eq 'large')?"lstorage":(($r[15].P2 -eq 'xlarge')?"xlstorage":$null)
-        rootVcenterPassword = $credentialsImport[8].P2
+        vcenterIp           = $inputdata.VCenter.Ip 
+        vcenterHostname     = $inputdata.VCenter.Hostname 
+        licenseFile         = $inputdata.VCenter.License     
+        vmSize              = $inputdata.VCenter.Size.Vm  
+        storageSize         = $inputdata.VCenter.Size.Storage  
+        rootVcenterPassword = $inputdata.VCenter.Password.Root
     }
     hostSpecs                   = $hostSpecs
 }
@@ -529,43 +577,7 @@ $orderedHashTable = [ordered]@{
 
 
  
-
  
- 
-
-# SDDC Manager Configuration
-#$SddcManagerHostname = "sfo-vcf01"
-#$SddcManagerIP = "192.168.10.203"
-#$SddcManagerVcfPassword = "VMw@re123!VMw@re123!"
-#$SddcManagerRootPassword = "VMw@re123!VMw@re123!"
-#$SddcManagerRestPassword = "VMw@re123!VMw@re123!"
-#$SddcManagerLocalPassword = "VMw@re123!VMw@re123!"
-
-# Nested ESXi VMs for Workload Domain
-#$NestedESXiHostnameToIPsForWorkloadDomain = [ordered]@{
-#   "vcf42-esx05" = "192.168.10.104"
-#  "vcf42-esx06" = "192.168.10.105"
-#  "vcf42-esx07" = "192.168.10.106"
-#  "vcf42-esx08" = "192.168.10.107"
-#}
- 
-<# 
-# vCenter Configuration
-$VCSAName = "sfo-m01-vc01"
-$VCSAIP = "192.168.10.202"
-$VCSARootPassword = "VMware1!"
-$VCSASSOPassword = "VMware1!"
-$EnableVCLM = $true
-
-# NSX Configuration
-$NSXManagerVIPHostname = "sfo-m01-nsx01"
-$NSXManagerVIPIP = "192.168.10.211"
-$NSXManagerNode1Hostname = "sfo-m01-nsx01a"
-$NSXManagerNode1IP = "192.168.10.212"
-$NSXRootPassword = "VMw@re123!VMw@re123!"
-$NSXAdminPassword = "VMw@re123!VMw@re123!"
-$NSXAuditPassword = "VMw@re123!VMw@re123!"
-#>
  
 
 # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
@@ -649,14 +661,14 @@ if ($confirmDeployment -eq 1) {
     if ($deployNestedESXiVMsForMgmt -eq 1) {
         Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Management Domain ----"
         Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
-        Write-Host -ForegroundColor White $NestedESXiHostnameToIPsForManagementDomain.count
+        Write-Host -ForegroundColor White $inputData.NestedESXi.HostnameToIPsForManagementDomain.count
         Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
-        Write-Host -ForegroundColor White $NestedESXiHostnameToIPsForManagementDomain.Values
+        Write-Host -ForegroundColor White $inputData.NestedESXi.HostnameToIPsForManagementDomain.Values
         Write-Host -NoNewline -ForegroundColor Green "vCPU: "
         Write-Host -ForegroundColor White $NestedESXiMGMTvCPU
         Write-Host -NoNewline -ForegroundColor Green "vMEM: "
         Write-Host -ForegroundColor White "$NestedESXiMGMTvMEM GB"
-        if ($vSanEsa) {
+        if ($inputdata.vSan.ESA) {
             Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 1 VMDK: "
             Write-Host -ForegroundColor White "$NestedESXiESADisk1 GB"
             Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 2 VMDK: "
@@ -675,11 +687,11 @@ if ($confirmDeployment -eq 1) {
     Write-Host -NoNewline -ForegroundColor Green "`nNetmask "
     Write-Host -ForegroundColor White $VMNetmask
     Write-Host -NoNewline -ForegroundColor Green "Gateway: "
-    Write-Host -ForegroundColor White $NestedESXiManagementNetwork_gateway
+    Write-Host -ForegroundColor White $inputData.NetworkSpecs.ManagementNetwork.gateway
     Write-Host -NoNewline -ForegroundColor Green "DNS: "
-    Write-Host -ForegroundColor White $nameServers
+    Write-Host -ForegroundColor White $inputData.NetworkSpecs.DnsSpec.NameServers
     Write-Host -NoNewline -ForegroundColor Green "NTP: "
-    Write-Host -ForegroundColor White $ntpServers
+    Write-Host -ForegroundColor White $inputdata.NetworkSpecs.NtpServers
     Write-Host -NoNewline -ForegroundColor Green "Syslog: "
     Write-Host -ForegroundColor White $VMSyslog
 
@@ -726,7 +738,7 @@ else {
 
 if ($deployNestedESXiVMsForMgmt -eq 1) {
     $answer = $null
-    $NestedESXiHostnameToIPsForManagementDomain.GetEnumerator().foreach({ 
+    $inputData.NestedESXi.HostnameToIPsForManagementDomain.GetEnumerator().foreach({ 
             $VMName = $_.Key
             $VMIPAddress = $_.Value
             $vm = Get-VM -Name $_.Key -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
@@ -740,16 +752,16 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
             $ovfconfig = Get-OvfConfiguration $NestedESXiApplianceOVA
             $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
             $ovfconfig.NetworkMapping.$networkMapLabel.value = $ESXVMNetwork1
-            $ovfconfig.common.guestinfo.hostname.value = "$VMName.$domain"
+            $ovfconfig.common.guestinfo.hostname.value = "$VMName.$($inputData.NetworkSpecs.DnsSpec.Domain)"
             $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
             $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
-            $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-            $ovfconfig.common.guestinfo.dns.value = $nameServers
-            $ovfconfig.common.guestinfo.domain.value = $domain
-            $ovfconfig.common.guestinfo.ntp.value = $ntpServers -join ","
+            $ovfconfig.common.guestinfo.gateway.value = $inputData.NetworkSpecs.ManagementNetwork.gateway
+            $ovfconfig.common.guestinfo.dns.value = $inputData.NetworkSpecs.DnsSpec.NameServers
+            $ovfconfig.common.guestinfo.domain.value = $inputData.NetworkSpecs.DnsSpec.Domain
+            $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
             $ovfconfig.common.guestinfo.syslog.value = $VMSyslog
-            $ovfconfig.common.guestinfo.password.value = $VMPassword
-            $ovfconfig.common.guestinfo.vlan.value = $NestedESXiManagementNetwork_vLanId
+            $ovfconfig.common.guestinfo.password.value = $inputData.NestedESXi.Password
+            $ovfconfig.common.guestinfo.vlan.value = $inputData.NetworkSpecs.ManagementNetwork.vLanId
             $ovfconfig.common.guestinfo.ssh.value = $true
 
             Write-Logger "Deploying Nested ESXi VM $VMName ..."
@@ -781,7 +793,7 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
             Write-Logger "Updating vSAN Boot Disk size to $NestedESXiMGMTBootDisk GB ..."
             Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $NestedESXiMGMTBootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
             # vSAN ESA requires NVMe Controller
-            if ($vSanEsa) {
+            if ($inputdata.vSan.ESA) {
 
                 Write-Logger "Updating vSAN Disk Capacity VMDK size to $NestedESXiESADisk1 GB  and $NestedESXiESADisk2 GB .."
                 Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $NestedESXiESADisk1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
@@ -863,11 +875,11 @@ if ($deployCloudBuilder -eq 1) {
         $ovfconfig.common.guestinfo.hostname.value = $CloudbuilderFQDN
         $ovfconfig.common.guestinfo.ip0.value = $CloudbuilderIP
         $ovfconfig.common.guestinfo.netmask0.value = $VMNetmask
-        $ovfconfig.common.guestinfo.gateway.value = $NestedESXiManagementNetwork_gateway
-        $ovfconfig.common.guestinfo.DNS.value = $nameServers
-        $ovfconfig.common.guestinfo.domain.value = $domain
-        $ovfconfig.common.guestinfo.searchpath.value = $domain
-        $ovfconfig.common.guestinfo.ntp.value = $ntpServers -join ","
+        $ovfconfig.common.guestinfo.gateway.value = $inputData.NetworkSpecs.ManagementNetwork.gateway
+        $ovfconfig.common.guestinfo.DNS.value = $inputData.NetworkSpecs.DnsSpec.NameServers
+        $ovfconfig.common.guestinfo.domain.value = $inputData.NetworkSpecs.DnsSpec.Domain
+        $ovfconfig.common.guestinfo.searchpath.value = $inputData.NetworkSpecs.DnsSpec.Domain
+        $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
         $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = $CloudbuilderAdminUsername
         $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $CloudbuilderAdminPassword
         $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $CloudbuilderRootPassword
@@ -910,15 +922,15 @@ if ($startVCFBringup -eq 1) {
     $adminPwd = ConvertTo-SecureString $CloudbuilderAdminPassword -AsPlainText -Force
     $cred = [Management.Automation.PSCredential]::new($CloudbuilderAdminUsername, $adminPwd)
 
-    if ($hclFile) {
+    if ($inputdata.vSan.HclFile) {
         Start-Sleep 10
         if ($UseSSH.isPresent) {
-            $hclFiledest = Split-Path -Path $hclFile
-            Write-Logger "SCP HCL ($HCLJsonFile) file to $hclFile ..."
+            $hclFiledest = Split-Path -Path $inputdata.vSan.HclFile
+            Write-Logger "SCP HCL ($HCLJsonFile) file to $inputdata.vSan.HclFile ..."
             Set-SCPItem -ComputerName $CloudbuilderIP -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
         }
-        Write-Logger "Copy-VMGuestFile HCL ($HCLJsonFile) file to $hclFile ..."
-        Copy-VMGuestFile -Source $HCLJsonFile -Destination $hclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest 
+        Write-Logger "Copy-VMGuestFile HCL ($HCLJsonFile) file to $inputdata.vSan.HclFile ..."
+        Copy-VMGuestFile -Source $HCLJsonFile -Destination $inputdata.vSan.HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest 
     }
     Write-Logger "Submitting VCF Bringup request ..."
 
