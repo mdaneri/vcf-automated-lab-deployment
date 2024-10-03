@@ -367,7 +367,11 @@ $orderedHashTable = [ordered]@{
     ceipEnabled                 = ($r2[5].P3 -ieq 'yes')
     fipsEnabled                 = ($r2[6].P3 -ieq 'yes')
     ntpServers                  = $inputdata.NetworkSpecs.NtpServers
-    dnsSpec                     = $inputData.NetworkSpecs.DnsSpec 
+    dnsSpec                     = [ordered]@{
+        subdomain  = $inputdata.NetworkSpecs.dnsSpec.Subdomain
+        domain     = $inputdata.NetworkSpecs.dnsSpec.Domain
+        nameserver = $inputdata.NetworkSpecs.dnsSpec.NameServers
+    }
     networkSpecs                = @(
         [ordered]@{
             networkType  = "MANAGEMENT"
@@ -926,11 +930,11 @@ if ($startVCFBringup -eq 1) {
         Start-Sleep 10
         if ($UseSSH.isPresent) {
             $hclFiledest = Split-Path -Path $inputdata.vSan.HclFile
-            Write-Logger "SCP HCL ($HCLJsonFile) file to $inputdata.vSan.HclFile ..."
+            Write-Logger "SCP HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
             Set-SCPItem -ComputerName $CloudbuilderIP -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
         }
-        Write-Logger "Copy-VMGuestFile HCL ($HCLJsonFile) file to $inputdata.vSan.HclFile ..."
-        Copy-VMGuestFile -Source $HCLJsonFile -Destination $inputdata.vSan.HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest 
+        Write-Logger "Copy-VMGuestFile HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
+        Copy-VMGuestFile -Source $HCLJsonFile -Destination $inputdata.vSan.HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
     }
     Write-Logger "Submitting VCF Bringup request ..."
 
