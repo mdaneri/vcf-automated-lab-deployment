@@ -1,6 +1,6 @@
 param(
     [string]
-    $ExcelFile = ".\vcf-ems-Deployment-Parameter11.xlsx",
+    $ExcelFile = ".\test.xlsx",
     [string]
     $HCLJsonFile = "$PWD/nested-esxi-vsan-esa-hcl.json",
     [string]
@@ -8,11 +8,28 @@ param(
     [switch]
     $UseSSH,
     [switch]
-    $GenerateMgmJson
+    $GenerateJson,
+    [switch]
+    $GeneratePsd1,
+    [switch]
+    $VCFBringup,
+    [switch]
+    $NoVapp,
+    [string]
+    $VIServer = "vmw-vc01.lab.local",
+    [string]
+    $VIUsername = "administrator@vsphere.local",
+    [string]
+    $VIPassword = "Pata2Pata1!",
+    [switch]   
+    $NoCloudBuilderDeploy 
 )
 # Author: William Lam
 # Website: www.williamlam.com
-install-Module -Name "ImportExcel" -Scope CurrentUser
+
+if ($ExcelFile) {
+    install-Module -Name "ImportExcel" -Scope CurrentUser
+}
 if ($UseSSH.isPresent) {
     install-module -Name "Posh-SSH"  -Scope CurrentUser
 }
@@ -65,22 +82,7 @@ $verboseLogFile = "$VAppName-deployment.log"
  
 
 
-
-
-if (Test-Path $ExcelFile) {
-    $r = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly
-    $licenseImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly -StartRow 11 -EndRow 15
-    $r2 = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 9 -EndColumn 11 -DataOnly
-    $credentialsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'credentials' -DataOnly
-    $mgmtNetworkImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 7 -EndRow 10
-    $esxImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 6 -EndRow 7
-    $rangeImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 8 -EndRow 10
-    $dsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 12 -EndRow 21
-    $overlayImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 22 -EndRow 28
-    $thumbprintImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 12 -EndRow 18
-}
-
-
+ 
 
 
 # row   vSphere Resource Pools                                                                                                                            Value
@@ -103,12 +105,6 @@ if (Test-Path $ExcelFile) {
 # 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
 # 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
 
- 
-
-# vCenter Server used to deploy VMware Cloud Foundation Lab
-$VIServer = "vmw-vc01.lab.local"
-$VIUsername = "administrator@vsphere.local"
-$VIPassword = "Pata2Pata1!"
 
 # Full Path to both the Nested ESXi & Cloud Builder OVA
 $NestedESXiApplianceOVA = "./ova/Nested_ESXi8.0u3_Appliance_Template_v1.ova"
@@ -118,11 +114,7 @@ $CloudBuilderOVA = "./ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova"
 
 $confirmDeployment = 1
 $deployNestedESXiVMsForMgmt = 1
-$deployNestedESXiVMsForWLD = 0
-$deployCloudBuilder = 1
-$moveVMsIntovApp = 1 
-$startVCFBringup = 1
-$generateWldHostCommissionJson = 0
+$deployNestedESXiVMsForWLD = 0 
 $uploadVCFNotifyScript = 0
 
 $srcNotificationScript = "vcf-bringup-notification.sh"
@@ -132,178 +124,202 @@ $StartTime = Get-Date
  
  
  
+if ($ExcelFile) {
+    if (Test-Path $ExcelFile) {
+        $r = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly
+        $licenseImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 5 -EndColumn 7 -DataOnly -StartRow 11 -EndRow 15
+        $r2 = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Deploy Parameters' -StartColumn 9 -EndColumn 11 -DataOnly
+        $credentialsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'credentials' -DataOnly
+        $mgmtNetworkImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 7 -EndRow 10
+        $esxImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 6 -EndRow 7
+        $rangeImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 12 -DataOnly -Raw -StartRow 8 -EndRow 10
+        $dsImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 12 -EndRow 21
+        $overlayImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 22 -EndRow 28
+        $thumbprintImport = Import-Excel -Path $ExcelFile -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 12 -EndRow 18
+    }
+    else {
+        Write-Host -ForegroundColor Red "`n$ExcelFile doesn't exist ...`n"
+        exit
+    }
+
+
  
- 
+    $deployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
         
-$inputData = [ordered]@{
-    SiteCode                 = 'sfo-m01'
-    DeployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
-
-    Management               = [ordered]@{
-        Datacenter = $r[18].P2 #Datacenter Name
-        PoolName   = $r[37].P2 #Network Pool Name
-    }
-    # SDDC Manager Configuration
-    SddcManager              = [ordered]@{ 
-        Hostname = [ordered]@{ 
-            VcfPassword   = $credentialsImport[15].P2 #SDDC Manager Super User *
-            RootPassword  = $credentialsImport[14].P2 #SDDC Manager Appliance Root Account *
-            LocalPassword = $credentialsImport[16].P2 #SDDC Manager Local Account
-            Ip            = $r[36].P2
-            Hostname      = $r[35].P2
+    $inputData = [ordered]@{
+        SiteCode                    = 'sfo-m01'
+        DeployWithoutLicenseKeys    = $deployWithoutLicenseKeys
+        SddcId                      = $r[38].P2
+        EsxLicense                  = ($deployWithoutLicenseKeys)?"":$licenseImport[1].P2
+        workflowType                = "VCF"
+        CeipEnabled                 = ($r2[5].P3 -ieq 'yes')
+        FipsEnabled                 = ($r2[6].P3 -ieq 'yes')
+        SkipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
+        
+        Management                  = [ordered]@{
+            Datacenter = $r[18].P2 #Datacenter Name
+            PoolName   = $r[37].P2 #Network Pool Name
         }
-    }
+        # SDDC Manager Configuration
+        SddcManager                 = [ordered]@{ 
+            Hostname = [ordered]@{ 
+                VcfPassword   = $credentialsImport[15].P2 #SDDC Manager Super User *
+                RootPassword  = $credentialsImport[14].P2 #SDDC Manager Appliance Root Account *
+                LocalPassword = $credentialsImport[16].P2 #SDDC Manager Local Account
+                Ip            = $r[36].P2
+                Hostname      = $r[35].P2
+            }
+        }
  
-    VCenter                  = [ordered]@{
-        Ip        = $r[13].P3
-        Hostname  = $r[13].P2   
-        License   = $licenseImport[3].P2      
-        Size      = [ordered]@{
-            Vm      = $r[14].P2
-            Storage = ($r[15].P2 -eq 'large')?"lstorage":(($r[15].P2 -eq 'xlarge')?"xlstorage":$null)
-        } 
-        Password  = [ordered]@{
-            Admin = $credentialsImport[7].P2 
-            Root  = $credentialsImport[8].P2
+        VCenter                     = [ordered]@{
+            Ip        = $r[13].P3
+            Hostname  = $r[13].P2   
+            License   = ($deployWithoutLicenseKeys)?"":$licenseImport[3].P2      
+            Size      = [ordered]@{
+                Vm      = $r[14].P2
+                Storage = ($r[15].P2 -eq 'large')?"lstorage":(($r[15].P2 -eq 'xlarge')?"xlstorage":$null)
+            } 
+            Password  = [ordered]@{
+                Admin = $credentialsImport[7].P2 
+                Root  = $credentialsImport[8].P2
+            }
+            SsoDomain = "vsphere.local"
         }
-        SsoDomain = "vsphere.local"
-    }
 
-    Cluster                  = [ordered]@{
-        Name         = $r[19].P2        
-        EvcMode      = ""#$r[21].P2
-        ImageEnabled = $r[20].P2 -eq 'yes'
-    }
-
-    NestedESXi               = [ordered]@{
-        Password                         = $credentialsImport[5].P2
-        HostnameToIPsForManagementDomain = [ordered]@{
-            $esxImport[0].P1 = $esxImport[1].P1
-            $esxImport[0].P2 = $esxImport[1].P2
-            $esxImport[0].P3 = $esxImport[1].P3
-            $esxImport[0].P4 = $esxImport[1].P4
+        Cluster                     = [ordered]@{
+            Name         = $r[19].P2        
+            EvcMode      = $r[21].P2
+            ImageEnabled = $r[20].P2 -eq 'yes'
         }
+
+        NestedESXi                  = [ordered]@{
+            Password                         = $credentialsImport[5].P2
+            HostnameToIPsForManagementDomain = [ordered]@{
+                $esxImport[0].P1 = $esxImport[1].P1
+                $esxImport[0].P2 = $esxImport[1].P2
+                $esxImport[0].P3 = $esxImport[1].P3
+                $esxImport[0].P4 = $esxImport[1].P4
+            }
          
-    }
-    NetworkSpecs             = [ordered]@{
-        dnsSpec           = [ordered]@{
-            Subdomain   = $r2[3].P2
-            Domain      = $r2[3].P2
-            NameServers = $( 
-                $ns = @()
-                for ($i = 3; $i -le 4; $i++) {
+        }
+        NetworkSpecs                = [ordered]@{
+            dnsSpec           = [ordered]@{
+                Subdomain   = $r2[3].P2
+                Domain      = $r2[3].P2
+                NameServers = $( 
+                    $ns = @()
+                    for ($i = 3; $i -le 4; $i++) {
+                        if ($r[$i].P2 -ne 'n/a') {
+                            $ns += $r[$i].P2
+                        }
+                    }
+                    $ns -join ','  # Join the array elements with a comma and return as the value
+                )
+            }
+        
+            NtpServers        = @(
+                $nt = @()
+                for ($i = 5; $i -le 6 ; $i++) {
                     if ($r[$i].P2 -ne 'n/a') {
-                        $ns += $r[$i].P2
+                        $nt += $r[$i].P2
+                    }  
+                }
+                $nt
+            )
+ 
+            #networkSpecs
+            ManagementNetwork = [ordered]@{subnet = $mgmtNetworkImport[1].P4
+                vLanId                            = "$($mgmtNetworkImport[1].P2)"
+                Mtu                               = "$($mgmtNetworkImport[1].P6)"
+                portGroupKey                      = $mgmtNetworkImport[1].P3
+                gateway                           = $mgmtNetworkImport[1].P5
+            }
+            vMotionNetwork    = [ordered]@{
+                subnet       = $mgmtNetworkImport[2].P4
+                vLanId       = "$($mgmtNetworkImport[2].P2)"
+                Mtu          = "$($mgmtNetworkImport[2].P6)"
+                portGroupKey = $mgmtNetworkImport[2].P3
+                gateway      = $mgmtNetworkImport[2].P5
+
+                Range        = [ordered]@{ 
+                    Start = $rangeImport[0].p2
+                    End   = $rangeImport[0].p4
+                }
+            }
+            vSan              = [ordered]@{
+                subnet       = $mgmtNetworkImport[3].P4
+                vLanId       = "$($mgmtNetworkImport[3].P2)"
+                Mtu          = "$($mgmtNetworkImport[3].P6)"
+                portGroupKey = $mgmtNetworkImport[3].P3
+                gateway      = $mgmtNetworkImport[3].P5
+                Range        = [ordered]@{
+                    Start = $rangeImport[1].p4
+                    End   = $rangeImport[1].p2
+                }
+            }
+            VmManamegent      = @{
+                subnet       = $mgmtNetworkImport[0].P4
+                gateway      = $mgmtNetworkImport[0].P5
+                vlanId       = "$($mgmtNetworkImport[0].P2)"
+                mtu          = "$($mgmtNetworkImport[0].P6)"
+                portGroupKey = $mgmtNetworkImport[0].P3
+            }
+        }
+
+        Nsxt                        = @{
+            Managers          = @(
+                for ($i = 30; $i -le 32; $i++) {
+                    if ($r[$i].P2 -eq 'n/a') {
+                        continue
+                    }
+                    [ordered]@{
+                        hostname = $r[$i].P2
+                        ip       = $r[$i].P3
                     }
                 }
-                $ns -join ','  # Join the array elements with a comma and return as the value
             )
-        }
-        
-        NtpServers        = @(
-            $nt = @()
-            for ($i = 5; $i -le 6 ; $i++) {
-                if ($r[$i].P2 -ne 'n/a') {
-                    $nt += $r[$i].P2
-                }  
-            }
-            $nt
-        )
- 
-        #networkSpecs
-        ManagementNetwork = [ordered]@{subnet = $mgmtNetworkImport[1].P4
-            vLanId                            = "$($mgmtNetworkImport[1].P2)"
-            Mtu                               = "$($mgmtNetworkImport[1].P6)"
-            portGroupKey                      = $mgmtNetworkImport[1].P3
-            gateway                           = $mgmtNetworkImport[1].P5
-        }
-        vMotionNetwork    = [ordered]@{
-            subnet       = $mgmtNetworkImport[2].P4
-            vLanId       = "$($mgmtNetworkImport[2].P2)"
-            Mtu          = "$($mgmtNetworkImport[2].P6)"
-            portGroupKey = $mgmtNetworkImport[2].P3
-            gateway      = $mgmtNetworkImport[2].P5
 
-            Range        = [ordered]@{ 
-                Start = $rangeImport[0].p2
-                End   = $rangeImport[0].p4
+            Password          = @{
+                Root  = $credentialsImport[10].P2
+                Admin = $credentialsImport[11].P2
+                Audit = $credentialsImport[12].P2
+            }
+            ManagerSize       = $r[33].P2
+            vip               = $r[29].P3
+            vipFqdn           = $r[29].P2 
+            License           = ($deployWithoutLicenseKeys)?"":$licenseImport[4].P2
+            TransportVlanId   = "$($overlayImport[0].P2)"
+            TransportType     = $dsImport[4].p2 
+            ipAddressPoolSpec = [ordered]@{
+                name        = $overlayImport[4].P2
+                description = $overlayImport[3].P2
+                subnets     = @(
+                    [ordered]@{
+                        ipAddressPoolRanges = @(
+                            [ordered]@{
+                                start = $overlayImport[6].P2
+                                end   = $overlayImport[6].P4
+                            }
+                        )
+                        cidr                = $overlayImport[5].P2
+                        gateway             = $overlayImport[5].P4
+                    }
+                )
             }
         }
-        vSan              = [ordered]@{
-            subnet       = $mgmtNetworkImport[3].P4
-            vLanId       = "$($mgmtNetworkImport[3].P2)"
-            Mtu          = "$($mgmtNetworkImport[3].P6)"
-            portGroupKey = $mgmtNetworkImport[3].P3
-            gateway      = $mgmtNetworkImport[3].P5
-            Range        = [ordered]@{
-                Start = $rangeImport[1].p4
-                End   = $rangeImport[1].p2
-            }
+        vSan                        = @{
+            ESA           = ($r2[16].P2 -ieq 'yes')
+            LicenseFile   = ($deployWithoutLicenseKeys)?"":$licenseImport[2].P2  
+            HclFile       = ($r2[17].P2 )?$r2[17].P2 :""
+            DatastoreName = $r2[14].P2
+            Dedup         = ($r2[15].P2 -ieq 'yes')
         }
-        VmManamegent      = @{
-            subnet       = $mgmtNetworkImport[0].P4
-            gateway      = $mgmtNetworkImport[0].P5
-            vlanId       = "$($mgmtNetworkImport[0].P2)"
-            mtu          = "$($mgmtNetworkImport[0].P6)"
-            portGroupKey = $mgmtNetworkImport[0].P3
-        }
-    }
+    } 
+}
 
-    Nsxt                     = @{
-        Managers          = @(
-            for ($i = 30; $i -le 32; $i++) {
-                if ($r[$i].P2 -eq 'n/a') {
-                    continue
-                }
-                [ordered]@{
-                    hostname = $r[$i].P2
-                    ip       = $r[$i].P3
-                }
-            }
-        )
 
-        Password          = @{
-            Root  = $credentialsImport[10].P2
-            Admin = $credentialsImport[11].P2
-            Audit = $credentialsImport[12].P2
-        }
-        ManagerSize       = $r[33].P2
-        vip               = $r[29].P3
-        vipFqdn           = $r[29].P2 
-        License           = $licenseImport[4].P2
-        TransportVlanId   = "$($overlayImport[0].P2)"
-        TransportType     = $dsImport[4].p2 
-        ipAddressPoolSpec = [ordered]@{
-            name        = $overlayImport[4].P2
-            description = $overlayImport[3].P2
-            subnets     = @(
-                [ordered]@{
-                    ipAddressPoolRanges = @(
-                        [ordered]@{
-                            start = $overlayImport[6].P2
-                            end   = $overlayImport[6].P4
-                        }
-                    )
-                    cidr                = $overlayImport[5].P2
-                    gateway             = $overlayImport[5].P4
-                }
-            )
-        }
-    }
-    vSan                     = @{
-        ESA           = ($r2[16].P2 -ieq 'yes')
-        LicenseFile   = $licenseImport[2].P2  
-        HclFile       = ($r2[17].P2 )?$r2[17].P2 :""
-        DatastoreName = $r2[14].P2
-        Dedup         = ($r2[15].P2 -ieq 'yes')
-    }
-} 
 
 $VMNetmask = ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet
- 
- 
-
-$skipEsxThumbprintValidation = $thumbprintImport[0].P3 -eq 'No'
 
 $hostSpecs = @()
 $i = 3
@@ -324,7 +340,7 @@ foreach ($key in $inputData.NestedESXi.HostnameToIPsForManagementDomain.Keys ) {
         vSwitch          = "vSwitch0"
         serverId         = "host-$($i-2)"
     }
-    if (!$skipEsxThumbprintValidation) {
+    if (!$inputData.SkipEsxThumbprintValidation) {
         $h['sshThumbprint'] = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[$i].P2  
         $h['sslThumbprint'] = ($null -eq $thumbprintImport[3].P4)?"SHA25_DUMMY_VALUE": $thumbprintImport[$i].P4
     }
@@ -336,17 +352,9 @@ foreach ($key in $inputData.NestedESXi.HostnameToIPsForManagementDomain.Keys ) {
  
  
 
- 
-
-# VCF Configurations
-$VCFManagementDomainPoolName = "vcf-m01-rp01"
-$VCFManagementDomainJSONFile = "vcf-mgmt.json"
-$VCFWorkloadDomainUIJSONFile = "vcf-commission-host-ui.json"
-$VCFWorkloadDomainAPIJSONFile = "vcf-commission-host-api.json"
-
 $orderedHashTable = [ordered]@{
     deployWithoutLicenseKeys    = $inputData.deployWithoutLicenseKeys
-    skipEsxThumbprintValidation = $skipEsxThumbprintValidation
+    skipEsxThumbprintValidation = $inputData.SkipEsxThumbprintValidation
     managementPoolName          = $inputData.Management.PoolName
     sddcManagerSpec             = [ordered]@{
         secondUserCredentials = [ordered]@{
@@ -361,11 +369,13 @@ $orderedHashTable = [ordered]@{
         }
         localUserPassword     = $inputData.SddcManager.Hostname.LocalPassword        
     }
-    sddcId                      = $r[38].P2
-    esxLicense                  = $licenseImport[1].P2
+    sddcId                      = $inputData.SddcId
+    esxLicense                  = $inputData.EsxLicense 
     workflowType                = "VCF"
-    ceipEnabled                 = ($r2[5].P3 -ieq 'yes')
-    fipsEnabled                 = ($r2[6].P3 -ieq 'yes')
+    ceipEnabled                 = $inputData.CeipEnabled
+    fipsEnabled                 = $inputData.FipsEnabled
+
+
     ntpServers                  = $inputdata.NetworkSpecs.NtpServers
     dnsSpec                     = [ordered]@{
         subdomain  = $inputdata.NetworkSpecs.dnsSpec.Subdomain
@@ -440,7 +450,7 @@ $orderedHashTable = [ordered]@{
         datastoreName = $inputdata.vSan.DatastoreName
     }
 
-    resourcePoolSpecs           = @( 
+    <#    resourcePoolSpecs           = @( 
         @{
             name                        = 'vcf-m01-cl01-rp-sddc-mgmt'
             type                        = "management"
@@ -546,7 +556,7 @@ $orderedHashTable = [ordered]@{
                 transportZones = get-TransportZone -Type $inputdata.Nsxt.TransportType -SiteCode $inputdata.SiteCode
             }
         }
-    )
+    )#>
     clusterSpec                 = [ordered]@{
         clusterName         = $inputdata.Cluster.Name     
         clusterEvcMode      = $inputdata.Cluster.EvcMode
@@ -707,7 +717,7 @@ if ($confirmDeployment -eq 1) {
     Clear-Host
 }
 
-if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployNestedESXiVMsForWLD -eq 1 -or $deployCloudBuilder -eq 1 -or $moveVMsIntovApp -eq 1) {
+if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployNestedESXiVMsForWLD -eq 1 -or (-not $NoCloudBuilderDeploy.IsPresent)) {
     Write-Logger "Connecting to Management vCenter Server $VIServer ..."
     $viConnection = Connect-VIServer $VIServer -User $VIUsername -Password $VIPassword -WarningAction SilentlyContinue 
 
@@ -716,7 +726,7 @@ if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployNestedESXiVMsForWLD -eq 1 -or $
     $vmhost = $cluster | Get-VMHost | Get-Random -Count 1
 }
 
-if ($moveVMsIntovApp -eq 1) {
+if (-not $NoVapp.IsPresent ) {
     # Check whether DRS is enabled as that is required to create vApp
     if ((Get-Cluster -Server $viConnection $cluster).DrsEnabled) {
 
@@ -864,11 +874,11 @@ if ($deployNestedESXiVMsForMgmt -eq 1) {
         })
 }
 
-if ($deployCloudBuilder -eq 1) {
+if (-not $NoCloudBuilderDeploy.IsPresent) {
     $answer = ""
-    $vm = Get-VM -Name $CloudbuilderVMHostname -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
+    $CloudbuilderVM = Get-VM -Name $CloudbuilderVMHostname -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
 
-    $redeploy, $answer = Test-VMForReImport -Vm $vm -Answer $answer
+    $redeploy, $answer = Test-VMForReImport -Vm $CloudbuilderVM -Answer $answer
 
     if ( $redeploy) { 
             
@@ -896,8 +906,20 @@ if ($deployCloudBuilder -eq 1) {
     }
 }
   
+$inputJson = $orderedHashTable | ConvertTo-Json  -Depth 10
 
-if ($startVCFBringup -eq 1) {
+if ($GenerateJson.isPresent) { 
+    Write-Logger "Saving the Configuration file '$VAppName.json' ..."
+    $inputJson | out-file "$VAppName.json"
+}
+
+if ($GeneratePsd1.isPresent) {
+    Write-Logger "Saving the Configuration file '$VAppName.psd1' ..."
+    Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$VAppName.psd1"
+}
+
+
+if ($VCFBringup.IsPresent) {
     Write-Logger "Starting VCF Deployment Bringup ..."
 
     Write-Logger "Waiting for Cloud Builder to be ready ..."
@@ -923,11 +945,15 @@ if ($startVCFBringup -eq 1) {
             Start-Sleep 30
         }
     }
+
+    
+    
+    Start-Sleep 60
+
     $adminPwd = ConvertTo-SecureString $CloudbuilderAdminPassword -AsPlainText -Force
     $cred = [Management.Automation.PSCredential]::new($CloudbuilderAdminUsername, $adminPwd)
 
     if ($inputdata.vSan.HclFile) {
-        Start-Sleep 10
         if ($UseSSH.isPresent) {
             $hclFiledest = Split-Path -Path $inputdata.vSan.HclFile
             Write-Logger "SCP HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
@@ -938,12 +964,10 @@ if ($startVCFBringup -eq 1) {
     }
     Write-Logger "Submitting VCF Bringup request ..."
 
-    $inputJson = $orderedHashTable | convertto-json  -Depth 10 #Get-Content -Raw $VCFManagementDomainJSONFile
-
-    if ($GenerateMgmJson.isPresent) {
-        $inputJson | out-file "$VAppName.json"
-    }
-
+   
+ 
+ 
+    
     $bringupAPIParms = @{
         Uri         = "https://${CloudbuilderIP}/v1/sddcs"
         Method      = 'POST'
@@ -951,14 +975,13 @@ if ($startVCFBringup -eq 1) {
         ContentType = 'application/json'
         Credential  = $cred
     }
-    Start-Sleep 10
     $bringupAPIReturn = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
     Write-Logger "Open browser to the VMware Cloud Builder UI (https://${CloudbuilderFQDN}) to monitor deployment progress ..."
 }
 
 
 
-if ($startVCFBringup -eq 1 -and $uploadVCFNotifyScript -eq 1) {
+if ($VCFBringup.IsPresent -and $uploadVCFNotifyScript -eq 1) {
     if (Test-Path $srcNotificationScript) {
         $cbVM = Get-VM -Server $viConnection $CloudbuilderFQDN
 
@@ -971,7 +994,7 @@ if ($startVCFBringup -eq 1 -and $uploadVCFNotifyScript -eq 1) {
     }
 }
 
-if ($deployNestedESXiVMsForMgmt -eq 1 -or $deployCloudBuilder -eq 1) {
+if ($deployNestedESXiVMsForMgmt -eq 1 -or (-not $NoCloudBuilderDeploy.IsPresent)) {
     Write-Logger "Disconnecting from $VIServer ..."
     Disconnect-VIServer -Server $viConnection -Confirm:$false
 }

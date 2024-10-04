@@ -133,7 +133,72 @@ function ConvertTo-Netmask {
 }
 
 
+
+# Function to format hashtable content for .psd1
+function Convert-HashtableToPsd1String {
+    param (
+        [Parameter(Mandatory)]
+        [hashtable]$Hashtable,
+
+        [int]$IndentLevel = 0  # Parameter to track the current indentation level
+    )
+
+    $indentation = ("`t" * $IndentLevel) # Create the current indentation string
+    $output = "$indentation@{" + [Environment]::NewLine
+
+    $Hashtable.GetEnumerator() | Sort-Object -Property Key | ForEach-Object {
+        $key = $_.Key
+        $value = $_.Value
+        $currentIndentation = ("`t" * ($IndentLevel + 1)) # Create the next level indentation string
+
+        if ($value -is [System.Collections.Hashtable] -or $value -is [System.Collections.IDictionary]) {
+            # If the value is another hashtable, recursively convert it with increased indentation
+            $output += "$currentIndentation`"$key`" = " + (Convert-HashtableToPsd1String -Hashtable $value -IndentLevel ($IndentLevel + 1)) + [Environment]::NewLine
+        }
+        elseif ($value -is [string]) {
+            # If the value is a string, add it with quotes and proper indentation
+            $output += "$currentIndentation`"$key`" = '$value'" + [Environment]::NewLine
+        }
+        elseif ($value -is [boolean]) {
+            # If the value is a boolean, add it without quotes and proper indentation
+            $output += "$currentIndentation`"$key`" = $value" + [Environment]::NewLine
+        }
+        elseif ($value -is [array]) {
+            # If the value is an array, format each element properly with indentation
+            $arrayOutput = "$currentIndentation`"$key`" = @(" + [Environment]::NewLine
+            foreach ($item in $value) {
+                if ($item -is [string]) {
+                    $arrayOutput += "$currentIndentation`t'$item'" + [Environment]::NewLine
+                }
+                elseif ($item -is [hashtable] -or $item -is [System.Collections.IDictionary]) {
+                    $arrayOutput += (Convert-HashtableToPsd1String -Hashtable $item -IndentLevel ($IndentLevel + 2)).Replace("@{", "$currentIndentation`t@{") + [Environment]::NewLine
+                }
+                elseif ($item -is [int] -or $item -is [float]) {
+                    $arrayOutput += "$currentIndentation`t$item" + [Environment]::NewLine
+                }
+                else {
+                    $arrayOutput += "$currentIndentation`t$item" + [Environment]::NewLine
+                }
+            }
+            $arrayOutput += "$currentIndentation)" + [Environment]::NewLine
+            $output += $arrayOutput
+        }
+        elseif ($value -is [int] -or $value -is [float]) {
+            # If the value is a number, add it without quotes and with proper indentation
+            $output += "$currentIndentation`"$key`" = $value" + [Environment]::NewLine
+        }
+        else {
+            # If the value is of another type, add it as an empty hashtable (for demonstration) with proper indentation
+            $output += "$currentIndentation`"$key`" = @{}" + [Environment]::NewLine
+        }
+    }
+
+    $output += "$indentation}" + [Environment]::NewLine
+    return $output
+}
+
 Export-ModuleMember -Function Test-VMForReImport
 Export-ModuleMember -Function Write-Logger
 Export-ModuleMember -Function Get-TransportZone
 Export-ModuleMember -Function ConvertTo-Netmask
+Export-ModuleMember -Function Convert-HashtableToPsd1String
