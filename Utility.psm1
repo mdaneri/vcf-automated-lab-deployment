@@ -25,19 +25,19 @@ function Test-VMForReImport {
     switch ($readAnswer) {
         'a' {
             if ($vm.PowerState -eq 'PoweredOn') {
-                Write-Logger "Powering Off $vmname ..."
+                Write-Logger "Powering Off $($vm.name) ..."
                 Stop-VM $vm -Confirm:$false | Out-Null
             }
-            Write-Logger "Removing $vmname ..."
+            Write-Logger "Removing $($vm.name) ..."
             Remove-VM -VM $vm -DeletePermanently -Confirm:$false | Out-Null
             return $true, 'y'
         }
         'y' {
             if ($vm.PowerState -eq 'PoweredOn') {
-                Write-Logger "Powering Off $vmname ..."
+                Write-Logger "Powering Off $($vm.name) ..."
                 Stop-VM $vm -Confirm:$false | Out-Null
             }
-            Write-Logger "Removing $vmname ..."
+            Write-Logger "Removing $($vm.name) ..."
             Remove-VM -VM $vm -DeletePermanently -Confirm:$false | Out-Null
             return $true, $Answer
         }
