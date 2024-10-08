@@ -472,8 +472,8 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     $answer = Read-Host -Prompt "Do you accept (Y or N)"
     if (( 'yes', 'y', 'true', 1 -notcontains $answer)) {
         exit
-     }
-     Clear-Host
+    }
+    Clear-Host
 }
 
 if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
@@ -539,6 +539,12 @@ if (-not $NoNestedMgmtEsx.IsPresent  ) {
 
             Write-Logger "Deploying Nested ESXi VM $VMName ..."
             $vm = Import-VApp -Source $inputData.VirtualDeployment.NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+            
+            if (-not $vm) {
+                Write-Logger -color red  -message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
+                @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'ESX' } | ConvertTo-Json | Out-File state.json
+                exit
+            }
 
             Write-Logger "Adding vmnic2/vmnic3 to Nested ESXi VMs ..."
             $vmPortGroup = Get-VirtualNetwork -Name $inputData.VirtualDeployment.ESX.VMNetwork2 -Location ($cluster | Get-Datacenter)
@@ -657,10 +663,14 @@ if (-not $NoCloudBuilderDeploy.IsPresent) {
         $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderAdminPassword
         $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword
 
-        Write-Logger "Deploying Cloud Builder VM $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname ..."
-        $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilderOVA -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
-
-        Write-Logger "Powering On $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname ..."
+        Write-Logger "Deploying Cloud Builder VM $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) ..."
+        $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilderOVA -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+        if (-not $CloudbuilderVM) {
+            Write-Logger -color red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) failed."
+            @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
+            exit
+        }
+        Write-Logger "Powering On $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) ..."
         $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
 }
