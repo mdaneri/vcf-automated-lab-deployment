@@ -460,7 +460,7 @@ function Get-HostSpec {
             hostname         = $key
             credentials      = [ordered]@{
                 username = "root"
-                password = $InputData.NestedESXi.Password
+                password = $InputData.VirtualDeployment.Esx.Password
             } 
 
             vSwitch          = "vSwitch0"
