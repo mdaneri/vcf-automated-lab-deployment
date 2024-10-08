@@ -197,8 +197,289 @@ function Convert-HashtableToPsd1String {
     return $output
 }
 
+
+function Get-JsonWorkload {
+    param (
+        [System.Management.Automation.OrderedHashtable]
+        $InputData
+    ) 
+    return [ordered]@{
+        deployWithoutLicenseKeys    = $InputData.deployWithoutLicenseKeys
+        skipEsxThumbprintValidation = $InputData.SkipEsxThumbprintValidation
+        managementPoolName          = $InputData.Management.PoolName
+        sddcManagerSpec             = [ordered]@{
+            secondUserCredentials = [ordered]@{
+                username = "vcf"
+                password = $InputData.SddcManager.Hostname.VcfPassword
+            }        
+            ipAddress             = $InputData.SddcManager.Hostname.Ip
+            hostname              = $InputData.SddcManager.Hostname.Hostname
+            rootUserCredentials   = [ordered]@{
+                username = 'root'
+                password = $InputData.SddcManager.Hostname.RootPassword
+            }
+            localUserPassword     = $InputData.SddcManager.Hostname.LocalPassword        
+        }
+        sddcId                      = $InputData.SddcId
+        esxLicense                  = $InputData.EsxLicense 
+        workflowType                = "VCF"
+        ceipEnabled                 = $InputData.CeipEnabled
+        fipsEnabled                 = $InputData.FipsEnabled
+
+
+        ntpServers                  = $InputData.NetworkSpecs.NtpServers
+        dnsSpec                     = [ordered]@{
+            subdomain  = $InputData.NetworkSpecs.dnsSpec.Subdomain
+            domain     = $InputData.NetworkSpecs.dnsSpec.Domain
+            nameserver = $InputData.NetworkSpecs.dnsSpec.NameServers
+        }
+        networkSpecs                = @(
+            [ordered]@{
+                networkType  = "MANAGEMENT"
+                subnet       = $InputData.NetworkSpecs.ManagementNetwork.subnet
+                gateway      = $InputData.NetworkSpecs.ManagementNetwork.gateway
+                vlanId       = $InputData.NetworkSpecs.ManagementNetwork.vLanId
+                mtu          = $InputData.NetworkSpecs.ManagementNetwork.Mtu
+                portGroupKey = $InputData.NetworkSpecs.ManagementNetwork.portGroupKey    
+            }
+            [ordered]@{
+                networkType            = "VMOTION"
+                subnet                 = $InputData.NetworkSpecs.vMotionNetwork.subnet
+                gateway                = $InputData.NetworkSpecs.vMotionNetwork.gateway
+                vlanId                 = $InputData.NetworkSpecs.vMotionNetwork.vLanId
+                mtu                    = $InputData.NetworkSpecs.vMotionNetwork.Mtu
+                portGroupKey           = $InputData.NetworkSpecs.vMotionNetwork.portGroupKey
+                includeIpAddressRanges = @(
+                    [ordered]@{
+                        endIpAddress   = $InputData.NetworkSpecs.vMotionNetwork.Range.End
+                        startIpAddress = $InputData.NetworkSpecs.vMotionNetwork.Range.Start
+                    }
+                )
+            }
+            [ordered]@{
+                networkType            = "VSAN"
+                subnet                 = $InputData.NetworkSpecs.vSan.subnet
+                gateway                = $InputData.NetworkSpecs.vSan.gateway
+                vlanId                 = $InputData.NetworkSpecs.vSan.vLanId
+                mtu                    = $InputData.NetworkSpecs.vSan.Mtu
+                portGroupKey           = $InputData.NetworkSpecs.vSan.portGroupKey
+                includeIpAddressRanges = @(
+                    [ordered]@{
+                        endIpAddress   = $InputData.NetworkSpecs.vSan.Range.Start
+                        startIpAddress = $InputData.NetworkSpecs.vSan.Range.End
+                    }
+                )
+            }
+            [ordered]@{
+                networkType  = "VM_MANAGEMENT"
+                subnet       = $InputData.NetworkSpecs.VmManamegent.subnet
+                gateway      = $InputData.NetworkSpecs.VmManamegent.gateway
+                vlanId       = $InputData.NetworkSpecs.VmManamegent.vlanId
+                mtu          = $InputData.NetworkSpecs.VmManamegent.mtu
+                portGroupKey = $InputData.NetworkSpecs.VmManamegent.portGroupKey 
+            }
+        )
+        nsxtSpec                    = [ordered]@{
+            nsxtManagerSize         = $InputData.Nsxt.ManagerSize
+            nsxtManagers            = $InputData.Nsxt.Managers
+            rootNsxtManagerPassword = $InputData.Nsxt.Password.Root
+            nsxtAdminPassword       = $InputData.Nsxt.Password.Admin
+            nsxtAuditPassword       = $InputData.Nsxt.Password.Audit
+            vip                     = $InputData.Nsxt.vip
+            vipFqdn                 = $InputData.Nsxt.vipFqdn
+            nsxtLicense             = $InputData.Nsxt.License
+            transportVlanId         = $InputData.Nsxt.TransportVlanId
+            ipAddressPoolSpec       = $InputData.Nsxt.ipAddressPoolSpec
+        }
+        vsanSpec                    = [ordered]@{
+            licenseFile   = $InputData.vSan.LicenseFile
+            vsanDedup     = (($InputData.vSan.ESA)? $false : ($InputData.vSan.Dedup))
+            esaConfig     = [ordered]@{
+                enabled = $InputData.vSan.ESA
+            }
+            hclFile       = $InputData.vSan.HclFile 
+            datastoreName = $InputData.vSan.DatastoreName
+        }
+
+        <#    resourcePoolSpecs           = @( 
+        @{
+            name                        = 'vcf-m01-cl01-rp-sddc-mgmt'
+            type                        = "management"
+            cpuReservationPercentage    = 0
+            cpuLimit                    = -1
+            cpuReservationExpandable    = $true
+            cpuSharesLevel              = "normal"
+            cpuSharesValue              = 0
+            memoryReservationMb         = 0
+            memoryLimit                 = -1
+            memoryReservationExpandable = $true
+            memorySharesLevel           = "normal"
+            memorySharesValue           = 0
+        }
+        @{
+            name                        = 'vcf-m01-cl01-rp-sddc-edge'
+            type                        = "network"
+            cpuReservationPercentage    = 0
+            cpuLimit                    = -1
+            cpuReservationExpandable    = $true
+            cpuSharesLevel              = "normal"
+            cpuSharesValue              = 0
+            memoryReservationPercentage = 0
+            memoryLimit                 = -1
+            memoryReservationExpandable = $true
+            memorySharesLevel           = "normal"
+            memorySharesValue           = 0
+        }
+        @{
+            name                        = 'vcf-m01-cl01-rp-user-edge'
+            type                        = 'compute'
+            cpuReservationPercentage    = 0
+            cpuLimit                    = -1
+            cpuReservationExpandable    = $true
+            cpuSharesLevel              = "normal"
+            cpuSharesValue              = 0
+            memoryReservationPercentage = 0
+            memoryLimit                 = -1
+            memoryReservationExpandable = $true
+            memorySharesLevel           = "normal"
+            memorySharesValue           = 0
+        }
+        @{
+            name                        = 'vcf-m01-cl01-rp-user-vm'
+            type                        = 'compute'
+            cpuReservationPercentage    = 0
+            cpuLimit                    = -1
+            cpuReservationExpandable    = $true
+            cpuSharesLevel              = "normal"
+            cpuSharesValue              = 0
+            memoryReservationPercentage = 0
+            memoryLimit                 = -1
+            memoryReservationExpandable = $true
+            memorySharesLevel           = "normal"
+            memorySharesValue           = 0
+        }
+    )#>
+        dvsSpecs                    = @(
+            [ordered]@{
+                dvsName          = $InputData.Nsxt.DvsName 
+                vmnics           = $InputData.Nsxt.Vmnics 
+                mtu              = $InputData.Nsxt.Mtu 
+                networks         = @("MANAGEMENT", "VMOTION", "VSAN", "VM_MANAGEMENT")
+                niocSpecs        = @(
+                    [ordered]@{
+                        trafficType = "VSAN"
+                        value       = "HIGH"
+                    }
+                    [ordered]@{
+                        trafficType = "VMOTION"
+                        value       = "LOW"
+                    }
+                    [ordered]@{
+                        trafficType = "VDP"
+                        value       = "LOW"
+                    }
+                    [ordered]@{
+                        trafficType = "VIRTUALMACHINE"
+                        value       = "HIGH"
+                    }
+                    [ordered]@{
+                        trafficType = "MANAGEMENT"
+                        value       = "NORMAL"
+                    }
+                    [ordered]@{
+                        trafficType = "NFS"
+                        value       = "LOW"
+                    }
+                    [ordered]@{
+                        trafficType = "HBR"
+                        value       = "LOW"
+                    }
+                    [ordered]@{
+                        trafficType = "FAULTTOLERANCE"
+                        value       = "LOW"
+                    }
+                    [ordered]@{
+                        trafficType = "ISCSI"
+                        value       = "LOW"
+                    }
+                )
+                nsxtSwitchConfig = [ordered]@{
+                    transportZones = get-TransportZone -Type $InputData.Nsxt.TransportType -SiteCode $InputData.SiteCode
+                }
+            }
+        ) 
+        clusterSpec                 = [ordered]@{
+            clusterName         = $InputData.Cluster.Name     
+            clusterEvcMode      = $InputData.Cluster.EvcMode
+            clusterImageEnabled = $InputData.Cluster.ImageEnabled
+            vmFolders           = [ordered]@{
+                MANAGEMENT = "$($InputData.SddcId)-fd-mgmt"
+                NETWORKING = "$($InputData.SddcId)-fd-nsx"
+                EDGENODES  = "$($InputData.SddcId)-fd-edge"
+            } 
+        }
+        pscSpecs                    = @(
+            [ordered]@{
+                adminUserSsoPassword = $InputData.VCenter.Password.Admin
+                pscSsoSpec           = [ordered]@{
+                    ssoDomain = $InputData.VCenter.SsoDomain 
+                }
+            }
+        )
+        vcenterSpec                 = [ordered]@{
+            vcenterIp           = $InputData.VCenter.Ip 
+            vcenterHostname     = $InputData.VCenter.Hostname 
+            licenseFile         = $InputData.VCenter.License     
+            vmSize              = $InputData.VCenter.Size.Vm  
+            storageSize         = $InputData.VCenter.Size.Storage  
+            rootVcenterPassword = $InputData.VCenter.Password.Root
+        }
+        hostSpecs                   = Get-HostSpec
+    }
+
+
+}
+
+
+
+function Get-HostSpec {
+    param (
+        [System.Management.Automation.OrderedHashtable]
+        $InputData
+    ) 
+    $hostSpecs = @()
+    $i = 3
+    foreach ($key in $InputData.NestedESXi.HostnameToIPsForManagementDomain.Keys ) {
+        $h = [ordered]@{
+            association      = $InputData.Management.Datacenter
+            ipAddressPrivate = [ordered]@{
+                ipAddress = $InputData.NestedESXi.HostnameToIPsForManagementDomain[$key]
+                cidr      = $InputData.NetworkSpecs.ManagementNetwork.subnet
+                gateway   = $InputData.NetworkSpecs.ManagementNetwork.gateway
+            }
+            hostname         = $key
+            credentials      = [ordered]@{
+                username = "root"
+                password = $InputData.NestedESXi.Password
+            } 
+
+            vSwitch          = "vSwitch0"
+            serverId         = "host-$($i-2)"
+        }
+        if (!$InputData.SkipEsxThumbprintValidation) {
+            $h['sshThumbprint'] = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[$i].P2  
+            $h['sslThumbprint'] = ($null -eq $thumbprintImport[3].P4)?"SHA25_DUMMY_VALUE": $thumbprintImport[$i].P4
+        }
+
+        $hostSpecs += $h
+        $i++
+    }
+    return $hostSpecs
+}
+
 Export-ModuleMember -Function Test-VMForReImport
 Export-ModuleMember -Function Write-Logger
 Export-ModuleMember -Function Get-TransportZone
 Export-ModuleMember -Function ConvertTo-Netmask
 Export-ModuleMember -Function Convert-HashtableToPsd1String
+Export-ModuleMember -Function Get-JsonWorkload
