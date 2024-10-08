@@ -125,18 +125,16 @@ if ($ExcelFile) {
     $deployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
         
     $inputData = [ordered]@{
-        VirtualDeployment           = [ordered]@{
-            # OVA 
-            NestedESXiApplianceOVA = (($NestedESXiApplianceOVA)? $NestedESXiApplianceOVA : $Virtual[1].P4)
-            CloudBuilderOVA        = (($CloudBuilderOVA)? $CloudBuilderOVA :$Virtual[2].P4)
+        VirtualDeployment           = [ordered]@{ 
 
             # General Deployment Configuration for Nested ESXi & Cloud Builder VM
-            VMDatacenter           = $Virtual[1].P2
-            VMCluster              = $Virtual[2].P2
-            VMDatastore            = $Virtual[3].P2
-            VMFolder               = $Virtual[4].P2
+            VMDatacenter = $Virtual[1].P2
+            VMCluster    = $Virtual[2].P2
+            VMDatastore  = $Virtual[3].P2
+            VMFolder     = $Virtual[4].P2
 
-            Esx                    = [ordered]@{
+            Esx          = [ordered]@{
+                Ova           = (($NestedESXiApplianceOVA)? $NestedESXiApplianceOVA : $Virtual[1].P4) 
                 vCPU          = $Virtual[13].P2
                 vMemory       = $Virtual[14].P2
                 BootDisk      = $Virtual[15].P2
@@ -149,16 +147,26 @@ if ($ExcelFile) {
                 VMNetwork1    = $Virtual[18].P2 
                 VMNetwork2    = $Virtual[19].P2 
                 Syslog        = $Virtual[20].P2
+           
+                Password      = $credentialsImport[5].P2
+                Hosts         = [ordered]@{
+                    $esxImport[0].P1 = @{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[3].P4 }
+                    $esxImport[0].P2 = @{Ip = $esxImport[1].P2; SshThumbprint = ($null -eq $thumbprintImport[4].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[4].P2; SslThumbprint = ($null -eq $thumbprintImport[4].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[4].P4 }
+                    $esxImport[0].P3 = @{Ip = $esxImport[1].P3; SshThumbprint = ($null -eq $thumbprintImport[5].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[5].P2; SslThumbprint = ($null -eq $thumbprintImport[5].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[5].P4 }
+                    $esxImport[0].P4 = @{Ip = $esxImport[1].P4; SshThumbprint = ($null -eq $thumbprintImport[6].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[6].P2; SslThumbprint = ($null -eq $thumbprintImport[6].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[6].P4 }
+                }
+             
             }
 
-            Cloudbuilder           = [ordered]@{
+            Cloudbuilder = [ordered]@{
+                Ova           = (($CloudBuilderOVA)? $CloudBuilderOVA :$Virtual[2].P4)
                 # Cloud Builder Configurations
-                CloudbuilderVMHostname    = $Virtual[6].P2
-                CloudbuilderFQDN          = $Virtual[7].P2
-                CloudbuilderIP            = $Virtual[8].P2 
-                CloudbuilderAdminPassword = $Virtual[10].P2
-                CloudbuilderRootPassword  = $Virtual[11].P2
-                PortGroup                 = $Virtual[9].P2
+                VMName        = $Virtual[6].P2
+                Hostname      = $Virtual[7].P2
+                Ip            = $Virtual[8].P2 
+                AdminPassword = $Virtual[10].P2
+                RootPassword  = $Virtual[11].P2
+                PortGroup     = $Virtual[9].P2
             }
 
         }
@@ -208,16 +216,7 @@ if ($ExcelFile) {
             ImageEnabled = $r[20].P2 -eq 'yes'
         }
 
-        NestedESXi                  = [ordered]@{
-            Password                         = $credentialsImport[5].P2
-            HostnameToIPsForManagementDomain = [ordered]@{
-                $esxImport[0].P1 = $esxImport[1].P1
-                $esxImport[0].P2 = $esxImport[1].P2
-                $esxImport[0].P3 = $esxImport[1].P3
-                $esxImport[0].P4 = $esxImport[1].P4
-            }
          
-        }
         NetworkSpecs                = [ordered]@{
             dnsSpec           = [ordered]@{
                 Subdomain   = $r2[3].P2
@@ -339,13 +338,13 @@ if ($ExcelFile) {
 $VMNetmask = ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet
 
 # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
-if ($inputData.VirtualDeployment.CloudBuilderOVA -match "5.2.0") {
+if ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.0") {
     $VCFVersion = "5.2.0"
 }
-elseif ($inputData.VirtualDeployment.CloudBuilderOVA -match "5.1.1") {
+elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.1.1") {
     $VCFVersion = "5.1.1"
 }
-elseif ($inputData.VirtualDeployment.CloudBuilderOVA -match "5.1.0") {
+elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.1.0") {
     $VCFVersion = "5.1.0"
 }
 else {
@@ -359,19 +358,19 @@ if ($null -eq $VCFVersion) {
 
 if ($VCFVersion -ge "5.2.0") {
     write-host "here"
-    if ( $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderAdminPassword.ToCharArray().count -lt 15 -or $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword.ToCharArray().count -lt 15) {
+    if ( $inputData.VirtualDeployment.Cloudbuilder.AdminPassword.ToCharArray().count -lt 15 -or $inputData.VirtualDeployment.Cloudbuilder.RootPassword.ToCharArray().count -lt 15) {
         Write-Host -ForegroundColor Red "`nCloud Builder passwords must be 15 characters or longer ...`n"
         exit
     }
 }
 
-if (!(Test-Path $inputData.VirtualDeployment.NestedESXiApplianceOVA)) {
-    Write-Host -ForegroundColor Red "`nUnable to find $($inputData.VirtualDeployment.NestedESXiApplianceOVA) ...`n"
+if (!(Test-Path $inputData.VirtualDeployment.Esx.Ova)) {
+    Write-Host -ForegroundColor Red "`nUnable to find $($inputData.VirtualDeployment.Esx.Ova) ...`n"
     exit
 }
 
-if (!(Test-Path $inputData.VirtualDeployment.CloudBuilderOVA)) {
-    Write-Host -ForegroundColor Red "`nUnable to find $($inputData.VirtualDeployment.CloudBuilderOVA) ...`n"
+if (!(Test-Path $inputData.VirtualDeployment.CloudBuilder.Ova)) {
+    Write-Host -ForegroundColor Red "`nUnable to find $($inputData.VirtualDeployment.CloudBuilder.Ova) ...`n"
     exit
 }
 
@@ -387,9 +386,9 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     Write-Host -NoNewline -ForegroundColor Green "VMware Cloud Foundation Version: "
     Write-Host -ForegroundColor White $VCFVersion
     Write-Host -NoNewline -ForegroundColor Green "Nested ESXi Image Path: "
-    Write-Host -ForegroundColor White $inputData.VirtualDeployment.NestedESXiApplianceOVA
+    Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.Ova
     Write-Host -NoNewline -ForegroundColor Green "Cloud Builder Image Path: "
-    Write-Host -ForegroundColor White $inputData.VirtualDeployment.CloudBuilderOVA
+    Write-Host -ForegroundColor White $inputData.VirtualDeployment.CloudBuilder.Ova
 
     Write-Host -ForegroundColor Yellow "`n---- vCenter Server Deployment Target Configuration ----"
     Write-Host -NoNewline -ForegroundColor Green "vCenter Server Address: "
@@ -416,11 +415,11 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     if (-not $NoCloudBuilderDeploy.IsPresent) {
         Write-Host -ForegroundColor Yellow "`n---- Cloud Builder Configuration ----"
         Write-Host -NoNewline -ForegroundColor Green "VM Name: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.VMName
         Write-Host -NoNewline -ForegroundColor Green "Hostname: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderFQDN
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.Hostname
         Write-Host -NoNewline -ForegroundColor Green "IP Address: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderIP
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.Ip
         Write-Host -NoNewline -ForegroundColor Green "PortGroup: "
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.PortGroup
     }
@@ -428,9 +427,9 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     if (! $NoNestedMgmtEsx.IsPresent) {
         Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Management Domain ----"
         Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
-        Write-Host -ForegroundColor White $inputData.NestedESXi.HostnameToIPsForManagementDomain.count
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.Hosts.count
         Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
-        Write-Host -ForegroundColor White $inputData.NestedESXi.HostnameToIPsForManagementDomain.Values
+        Write-Host -ForegroundColor White ($inputData.VirtualDeployment.Esx.Hosts.Ip -join ', ')
         Write-Host -NoNewline -ForegroundColor Green "vCPU: "
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.vCPU
         Write-Host -NoNewline -ForegroundColor Green "vMEM: "
@@ -511,9 +510,9 @@ else {
 
 if (-not $NoNestedMgmtEsx.IsPresent  ) {
     $answer = $null
-    $inputData.NestedESXi.HostnameToIPsForManagementDomain.GetEnumerator().foreach({ 
+    $inputData.VirtualDeployment.Esx.Hosts.GetEnumerator().foreach({ 
             $VMName = $_.Key
-            $VMIPAddress = $_.Value
+            $VMIPAddress = $_.Value.Ip
             $vm = Get-VM -Name $_.Key -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
 
             $redeploy, $answer = Test-VMForReImport -Vm $vm -Answer $answer
@@ -522,7 +521,7 @@ if (-not $NoNestedMgmtEsx.IsPresent  ) {
                 return
             }
 
-            $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.NestedESXiApplianceOVA
+            $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.Esx.Ova
             $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
             $ovfconfig.NetworkMapping.$networkMapLabel.value = $inputData.VirtualDeployment.ESX.VMNetwork1
             $ovfconfig.common.guestinfo.hostname.value = "$VMName.$($inputData.NetworkSpecs.DnsSpec.Domain)"
@@ -533,12 +532,12 @@ if (-not $NoNestedMgmtEsx.IsPresent  ) {
             $ovfconfig.common.guestinfo.domain.value = $inputData.NetworkSpecs.DnsSpec.Domain
             $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
             $ovfconfig.common.guestinfo.syslog.value = $inputData.VirtualDeployment.Syslog
-            $ovfconfig.common.guestinfo.password.value = $inputData.NestedESXi.Password
+            $ovfconfig.common.guestinfo.password.value = $inputData.VirtualDeployment.Esx.Password
             $ovfconfig.common.guestinfo.vlan.value = $inputData.NetworkSpecs.ManagementNetwork.vLanId
             $ovfconfig.common.guestinfo.ssh.value = $true
 
             Write-Logger "Deploying Nested ESXi VM $VMName ..."
-            $vm = Import-VApp -Source $inputData.VirtualDeployment.NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+            $vm = Import-VApp -Source $inputData.VirtualDeployment.Esx.Ova -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
             
             if (-not $vm) {
                 Write-Logger -color red  -message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
@@ -641,18 +640,18 @@ if (-not $NoNestedMgmtEsx.IsPresent  ) {
 
 if (-not $NoCloudBuilderDeploy.IsPresent) {
     $answer = ""
-    $CloudbuilderVM = Get-VM -Name $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
+    $CloudbuilderVM = Get-VM -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
 
     $redeploy, $answer = Test-VMForReImport -Vm $CloudbuilderVM -Answer $answer
 
     if ( $redeploy) { 
             
-        $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.CloudBuilderOVA
+        $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.CloudBuilder.Ova
 
         $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
         $ovfconfig.NetworkMapping.$networkMapLabel.value = $inputData.VirtualDeployment.Cloudbuilder.PortGroup
-        $ovfconfig.common.guestinfo.hostname.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderFQDN
-        $ovfconfig.common.guestinfo.ip0.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderIP
+        $ovfconfig.common.guestinfo.hostname.value = $inputData.VirtualDeployment.Cloudbuilder.Hostname
+        $ovfconfig.common.guestinfo.ip0.value = $inputData.VirtualDeployment.Cloudbuilder.Ip
         $ovfconfig.common.guestinfo.netmask0.value = $VMNetmask
         $ovfconfig.common.guestinfo.gateway.value = $inputData.NetworkSpecs.ManagementNetwork.gateway
         $ovfconfig.common.guestinfo.DNS.value = $inputData.NetworkSpecs.DnsSpec.NameServers
@@ -660,17 +659,17 @@ if (-not $NoCloudBuilderDeploy.IsPresent) {
         $ovfconfig.common.guestinfo.searchpath.value = $inputData.NetworkSpecs.DnsSpec.Domain
         $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
         $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = $CloudbuilderAdminUsername
-        $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderAdminPassword
-        $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword
+        $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.AdminPassword
+        $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.RootPassword
 
-        Write-Logger "Deploying Cloud Builder VM $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) ..."
-        $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilderOVA -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+        Write-Logger "Deploying Cloud Builder VM $($inputData.VirtualDeployment.Cloudbuilder.VMName) ..."
+        $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilder.Ova -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
         if (-not $CloudbuilderVM) {
-            Write-Logger -color red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) failed."
+            Write-Logger -color red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.VMName) failed."
             @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
             exit
         }
-        Write-Logger "Powering On $($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderVMHostname) ..."
+        Write-Logger "Powering On $($inputData.VirtualDeployment.Cloudbuilder.VMName) ..."
         $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
 }
@@ -699,16 +698,16 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
 
         Write-Logger "Waiting for Cloud Builder to be ready ..."
         while (1) {
-            $credentialsair = "${CloudbuilderAdminUsername}:${CloudbuilderAdminPassword}"
+            $credentialsair = "admin:$($inputData.VirtualDeployment.Cloudbuilder.AdminPassword)"
             $bytes = [System.Text.Encoding]::ASCII.GetBytes($credentialsair)
             $base64 = [System.Convert]::ToBase64String($bytes)
 
             try {
                 if ($PSVersionTable.PSEdition -eq "Core") {
-                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderIP)/v1/sddcs" -Method GET -SkipCertificateCheck -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
+                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -SkipCertificateCheck -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
                 }
                 else {
-                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.CloudbuilderIP)/v1/sddcs" -Method GET -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
+                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
                 }
                 if ($requests.StatusCode -eq 200) {
                     Write-Logger "Cloud Builder is now ready!"
@@ -725,14 +724,14 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
     
         Start-Sleep 60
 
-        $adminPwd = ConvertTo-SecureString $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderAdminPassword -AsPlainText -Force
-        $cred = [Management.Automation.PSCredential]::new($CloudbuilderAdminUsername, $adminPwd)
+        $adminPwd = ConvertTo-SecureString $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force
+        $cred = [Management.Automation.PSCredential]::new('admin', $adminPwd)
 
         if ($inputdata.vSan.HclFile) {
             if ($UseSSH.isPresent) {
                 $hclFiledest = Split-Path -Path $inputdata.vSan.HclFile
                 Write-Logger "SCP HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
-                Set-SCPItem -ComputerName $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderIP -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
+                Set-SCPItem -ComputerName $inputData.VirtualDeployment.Cloudbuilder.Ip -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
             }
             Write-Logger "Copy-VMGuestFile HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
             Copy-VMGuestFile -Source $HCLJsonFile -Destination $inputdata.vSan.HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
@@ -740,28 +739,28 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
         Write-Logger "Submitting VCF Bringup request ..." 
     
         $bringupAPIParms = @{
-            Uri         = "https://${CloudbuilderIP}/v1/sddcs"
+            Uri         = "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs"
             Method      = 'POST'
             Body        = $inputJson
             ContentType = 'application/json'
             Credential  = $cred
         }
         $bringupAPIReturn = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
-        Write-Logger "Open browser to the VMware Cloud Builder UI (https://${CloudbuilderFQDN}) to monitor deployment progress ..."
+        Write-Logger "Open browser to the VMware Cloud Builder UI (https://${Hostname}) to monitor deployment progress ..."
     }
 
 }
 
 if ($VCFBringup.IsPresent -and $uploadVCFNotifyScript -eq 1) {
     if (Test-Path $srcNotificationScript) {
-        $cbVM = Get-VM -Server $viConnection $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderFQDN
+        $cbVM = Get-VM -Server $viConnection $inputData.VirtualDeployment.Cloudbuilder.Hostname
 
         Write-Logger "Uploading VCF notification script $srcNotificationScript to $dstNotificationScript on Cloud Builder appliance ..."
-        Copy-VMGuestFile -Server $viConnection -VM $cbVM -Source $srcNotificationScript -Destination $dstNotificationScript -LocalToGuest -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword | Out-Null
-        Invoke-VMScript -Server $viConnection -VM $cbVM -ScriptText "chmod +x $dstNotificationScript" -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword | Out-Null
+        Copy-VMGuestFile -Server $viConnection -VM $cbVM -Source $srcNotificationScript -Destination $dstNotificationScript -LocalToGuest -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.RootPassword | Out-Null
+        Invoke-VMScript -Server $viConnection -VM $cbVM -ScriptText "chmod +x $dstNotificationScript" -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.RootPassword | Out-Null
 
         Write-Logger "Configuring crontab to run notification check script every 15 minutes ..."
-        Invoke-VMScript -Server $viConnection -VM $cbVM -ScriptText "echo '*/15 * * * * $dstNotificationScript' > /var/spool/cron/root" -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.CloudbuilderRootPassword | Out-Null
+        Invoke-VMScript -Server $viConnection -VM $cbVM -ScriptText "echo '*/15 * * * * $dstNotificationScript' > /var/spool/cron/root" -GuestUser "root" -GuestPassword $inputData.VirtualDeployment.Cloudbuilder.RootPassword | Out-Null
     }
 }
 

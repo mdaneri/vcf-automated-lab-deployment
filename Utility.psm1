@@ -204,7 +204,7 @@ function Get-JsonWorkload {
         $InputData
     ) 
     return [ordered]@{
-        deployWithoutLicenseKeys    = $InputData.deployWithoutLicenseKeys
+        deployWithoutLicenseKeys    = $InputData.DeployWithoutLicenseKeys
         skipEsxThumbprintValidation = $InputData.SkipEsxThumbprintValidation
         managementPoolName          = $InputData.Management.PoolName
         sddcManagerSpec             = [ordered]@{
@@ -404,7 +404,7 @@ function Get-JsonWorkload {
                     }
                 )
                 nsxtSwitchConfig = [ordered]@{
-                    transportZones = get-TransportZone -Type $InputData.Nsxt.TransportType -SiteCode $InputData.SiteCode
+                    transportZones = get-TransportZone -Type $InputData.Nsxt.TransportType -SiteCode $InputData.SddcId
                 }
             }
         ) 
@@ -434,7 +434,7 @@ function Get-JsonWorkload {
             storageSize         = $InputData.VCenter.Size.Storage  
             rootVcenterPassword = $InputData.VCenter.Password.Root
         }
-        hostSpecs                   = Get-HostSpec
+        hostSpecs                   = Get-HostSpec -InputData $InputData
     }
 
 
@@ -449,11 +449,11 @@ function Get-HostSpec {
     ) 
     $hostSpecs = @()
     $i = 3
-    foreach ($key in $InputData.NestedESXi.HostnameToIPsForManagementDomain.Keys ) {
+    foreach ($key in $InputData.VirtualDeployment.Esx.Hosts.Keys ) {
         $h = [ordered]@{
             association      = $InputData.Management.Datacenter
             ipAddressPrivate = [ordered]@{
-                ipAddress = $InputData.NestedESXi.HostnameToIPsForManagementDomain[$key]
+                ipAddress = $InputData.VirtualDeployment.Esx.Hosts[$key].Ip
                 cidr      = $InputData.NetworkSpecs.ManagementNetwork.subnet
                 gateway   = $InputData.NetworkSpecs.ManagementNetwork.gateway
             }
@@ -467,8 +467,8 @@ function Get-HostSpec {
             serverId         = "host-$($i-2)"
         }
         if (!$InputData.SkipEsxThumbprintValidation) {
-            $h['sshThumbprint'] = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[$i].P2  
-            $h['sslThumbprint'] = ($null -eq $thumbprintImport[3].P4)?"SHA25_DUMMY_VALUE": $thumbprintImport[$i].P4
+            $h['sshThumbprint'] =   $InputData.VirtualDeployment.Esx.Hosts[$key].SshThumbprint
+            $h['sslThumbprint'] =   $InputData.VirtualDeployment.Esx.Hosts[$key].SslThumbprint
         }
 
         $hostSpecs += $h
