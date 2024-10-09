@@ -5,3 +5,4 @@ template.json
 vapp-test.json
 vapp-test.psd1
 .vscode/launch.json
+state.json
