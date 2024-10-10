@@ -547,11 +547,11 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
 
     
     
-        Start-Sleep 60 
+      #  Start-Sleep 60 
         Invoke-BringUp -HclFile $inputdata.vSan.HclFile `
             -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
             -AdminPassword $(ConvertTo-SecureString -String $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force) `
-            -Json $inputJson
+            -Json $inputJson  
         <#$adminPwd = ConvertTo-SecureString $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force
         $cred = [Management.Automation.PSCredential]::new('admin', $adminPwd)
 

@@ -191,6 +191,9 @@ function Convert-HashtableToPsd1String {
             # If the value is a number, add it without quotes and with proper indentation
             $output += "$currentIndentation`"$key`" = $value" + [Environment]::NewLine
         }
+        elseif ($null -eq $value  ) {
+            $output += "$currentIndentation`"$key`" = null" + [Environment]::NewLine
+        }
         else {
             # If the value is of another type, add it as an empty hashtable (for demonstration) with proper indentation
             $output += "$currentIndentation`"$key`" = @{}" + [Environment]::NewLine
@@ -697,7 +700,7 @@ function Invoke-BringUp {
         Credential  = $cred
     }
     $bringupAPIReturn = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
-    Write-Logger "Open browser to the VMware Cloud Builder UI (https://${Hostname}) to monitor deployment progress ..."
+    Write-Logger "Open browser to the VMware Cloud Builder UI (https://${CloudbuilderFqdn}) to monitor deployment progress ..."
 }
 
 
