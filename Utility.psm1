@@ -236,9 +236,9 @@ function Get-JsonWorkload {
 
         ntpServers                  = $InputData.NetworkSpecs.NtpServers
         dnsSpec                     = [ordered]@{
-            subdomain  = $InputData.NetworkSpecs.dnsSpec.Subdomain
-            domain     = $InputData.NetworkSpecs.dnsSpec.Domain
-            nameserver = $InputData.NetworkSpecs.dnsSpec.NameServers
+            subdomain  = $InputData.NetworkSpecs.DnsSpec.Subdomain
+            domain     = $InputData.NetworkSpecs.DnsSpec.Domain
+            nameserver = $InputData.NetworkSpecs.DnsSpec.NameServers
         }
         networkSpecs                = @(
             [ordered]@{
@@ -548,7 +548,7 @@ function Import-ExcelVCFData {
 
          
         NetworkSpecs                = [ordered]@{
-            dnsSpec           = [ordered]@{
+            DnsSpec           = [ordered]@{
                 Subdomain   = $r2[3].P2
                 Domain      = $r2[3].P2
                 NameServers = $( 
@@ -704,6 +704,145 @@ function Invoke-BringUp {
 }
 
 
+function Add-VirtualEsx { 
+    param( 
+        [VMware.VimAutomation.ViCore.Impl.V1.Inventory.VAppImpl]
+        $ImportLocation,
+        [hashtable]
+        $NetworkSpecs,
+        [hashtable]
+        $Esx,
+        [switch]
+        $VsanEsa
+        
+    )
+    foreach ($VMName in  $Esx.Hosts.Keys) {
+     
+        $VMIPAddress = $Esx.Hosts[$VMname].Ip
+        $vm = Get-VM -Name $VMName -Location $ImportLocation -ErrorAction SilentlyContinue
+
+        $redeploy, $answer = Test-VMForReImport -Vm $vm -Answer $answer
+
+        if (! $redeploy) {
+            continue
+        }
+       $datacenter= $importLocation.Parentfolder|Get-Datacenter 
+        $ovfconfig = Get-OvfConfiguration $esx.Ova
+        $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
+        $ovfconfig.NetworkMapping.$networkMapLabel.value = $esx.VMNetwork1
+        $ovfconfig.common.guestinfo.hostname.value = "$VMName.$($NetworkSpecs.DnsSpec.Domain)"
+        $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
+        $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
+        $ovfconfig.common.guestinfo.gateway.value = $NetworkSpecs.ManagementNetwork.gateway
+        $ovfconfig.common.guestinfo.dns.value = $NetworkSpecs.DnsSpec.NameServers
+        $ovfconfig.common.guestinfo.domain.value = $NetworkSpecs.DnsSpec.Domain
+        $ovfconfig.common.guestinfo.ntp.value = $NetworkSpecs.NtpServers -join ","
+        $ovfconfig.common.guestinfo.syslog.value = $esx.Syslog
+        $ovfconfig.common.guestinfo.password.value = $esx.Password
+        $ovfconfig.common.guestinfo.vlan.value = $NetworkSpecs.ManagementNetwork.vLanId
+        $ovfconfig.common.guestinfo.ssh.value = $true
+
+        Write-Logger "Deploying Nested ESXi VM $VMName ..."
+        $vm = Import-VApp -Source $esx.Ova -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+    
+        if (-not $vm) {
+            Write-Logger -color red  -message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
+            @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'ESX' } | ConvertTo-Json | Out-File state.json
+            exit
+        }
+
+        Write-Logger "Adding vmnic2/vmnic3 to Nested ESXi VMs ..."
+        $vmPortGroup = Get-VirtualNetwork -Name $esx.VMNetwork2 -Location $datacenter
+        if ($vmPortGroup.NetworkType -eq "Distributed") {
+            $vmPortGroup = Get-VDPortgroup -Name $esx.VMNetwork2
+            New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+            New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        }
+        else {
+            New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+            New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        }
+
+        $vm | New-AdvancedSetting -name "ethernet2.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
+        $vm | New-AdvancedSetting -Name "ethernet2.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
+
+        $vm | New-AdvancedSetting -name "ethernet3.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
+        $vm | New-AdvancedSetting -Name "ethernet3.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
+
+        Write-Logger "Updating vCPU Count to $($esx.vCPU) & vMEM to $($esx.vMemory) GB ..."
+        Set-VM -VM $vm -NumCpu $esx.vCPU -CoresPerSocket $esx.vCPU -MemoryGB $esx.vMemory -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+
+   
+
+        Write-Logger "Updating vSAN Boot Disk size to $($esx.BootDisk) GB ..."
+        Get-HardDisk -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $esx.BootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        # vSAN ESA requires NVMe Controller
+        if ($VsanEsa.isPresent) {
+
+            Write-Logger "Updating vSAN Disk Capacity VMDK size to $($esx.ESADisk1) GB  and $($esx.ESADisk2) GB .."
+            Get-HardDisk -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $esx.ESADisk1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+            Get-HardDisk -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $esx.ESADisk2 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+
+            Write-Logger "Updating storage controller to NVMe for vSAN ESA ..."
+            $devices = $vm.ExtensionData.Config.Hardware.Device
+
+            $newControllerKey = -102
+
+            # Reconfigure 1 - Add NVMe Controller & Update Disk Mapping to new controller
+            $deviceChanges = @()
+            $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
+
+            $scsiController = $devices | Where-Object { $_.getType().Name -eq "ParaVirtualSCSIController" }
+            $scsiControllerDisks = $scsiController.device
+
+            $nvmeControllerAddSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
+            $nvmeControllerAddSpec.Device = [VMware.Vim.VirtualNVMEController]::new()
+            $nvmeControllerAddSpec.Device.Key = $newControllerKey
+            $nvmeControllerAddSpec.Device.BusNumber = 0
+            $nvmeControllerAddSpec.Operation = 'add'
+            $deviceChanges += $nvmeControllerAddSpec
+
+            foreach ($scsiControllerDisk in $scsiControllerDisks) {
+                $device = $devices | Where-Object { $_.key -eq $scsiControllerDisk }
+
+                $changeControllerSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
+                $changeControllerSpec.Operation = 'edit'
+                $changeControllerSpec.Device = $device
+                $changeControllerSpec.Device.key = $device.key
+                $changeControllerSpec.Device.unitNumber = $device.UnitNumber
+                $changeControllerSpec.Device.ControllerKey = $newControllerKey
+                $deviceChanges += $changeControllerSpec
+            }
+
+            $spec.deviceChange = $deviceChanges
+
+            $task = $vm.ExtensionData.ReconfigVM_Task($spec)
+            $task1 = Get-Task -Id ("Task-$($task.value)")
+            $task1 | Wait-Task | Out-Null
+
+            # Reconfigure 2 - Remove PVSCSI Controller
+            $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
+            $scsiControllerRemoveSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
+            $scsiControllerRemoveSpec.Operation = 'remove'
+            $scsiControllerRemoveSpec.Device = $scsiController
+            $spec.deviceChange = $scsiControllerRemoveSpec
+
+            $task = $vm.ExtensionData.ReconfigVM_Task($spec)
+            $task1 = Get-Task -Id ("Task-$($task.value)")
+            $task1 | Wait-Task | Out-Null
+        }
+        else {
+            Write-Logger "Updating vSAN Cache VMDK size to $($esx.CachingvDisk) GB & Capacity VMDK size to $($esx.CapacityvDisk) GB ..."
+            Get-HardDisk -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $esx.CachingvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+            Get-HardDisk -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $esx.CapacityvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
+        }
+
+
+        Write-Logger "Powering On $vmname ..."
+        $vm | Start-Vm -RunAsync | Out-Null
+    }
+}
+
 Export-ModuleMember -Function Test-VMForReImport
 Export-ModuleMember -Function Write-Logger
 Export-ModuleMember -Function Get-TransportZone
@@ -712,3 +851,4 @@ Export-ModuleMember -Function Convert-HashtableToPsd1String
 Export-ModuleMember -Function Get-JsonWorkload
 Export-ModuleMember -Function Import-ExcelVCFData
 Export-ModuleMember -Function Invoke-BringUp
+Export-ModuleMember -Function Add-VirtualEsx

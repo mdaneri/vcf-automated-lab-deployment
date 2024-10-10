@@ -333,134 +333,8 @@ if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
 }
 
 
-if (-not $NoNestedMgmtEsx.IsPresent  ) {
-    $answer = $null
-    $inputData.VirtualDeployment.Esx.Hosts.GetEnumerator().foreach({ 
-            $VMName = $_.Key
-            $VMIPAddress = $_.Value.Ip
-            $vm = Get-VM -Name $_.Key -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
-
-            $redeploy, $answer = Test-VMForReImport -Vm $vm -Answer $answer
-
-            if (! $redeploy) {
-                return
-            }
-
-            $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.Esx.Ova
-            $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
-            $ovfconfig.NetworkMapping.$networkMapLabel.value = $inputData.VirtualDeployment.ESX.VMNetwork1
-            $ovfconfig.common.guestinfo.hostname.value = "$VMName.$($inputData.NetworkSpecs.DnsSpec.Domain)"
-            $ovfconfig.common.guestinfo.ipaddress.value = $VMIPAddress
-            $ovfconfig.common.guestinfo.netmask.value = $VMNetmask
-            $ovfconfig.common.guestinfo.gateway.value = $inputData.NetworkSpecs.ManagementNetwork.gateway
-            $ovfconfig.common.guestinfo.dns.value = $inputData.NetworkSpecs.DnsSpec.NameServers
-            $ovfconfig.common.guestinfo.domain.value = $inputData.NetworkSpecs.DnsSpec.Domain
-            $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
-            $ovfconfig.common.guestinfo.syslog.value = $inputData.VirtualDeployment.Syslog
-            $ovfconfig.common.guestinfo.password.value = $inputData.VirtualDeployment.Esx.Password
-            $ovfconfig.common.guestinfo.vlan.value = $inputData.NetworkSpecs.ManagementNetwork.vLanId
-            $ovfconfig.common.guestinfo.ssh.value = $true
-
-            Write-Logger "Deploying Nested ESXi VM $VMName ..."
-            $vm = Import-VApp -Source $inputData.VirtualDeployment.Esx.Ova -OvfConfiguration $ovfconfig -Name $VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
-            
-            if (-not $vm) {
-                Write-Logger -color red  -message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
-                @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'ESX' } | ConvertTo-Json | Out-File state.json
-                exit
-            }
-
-            Write-Logger "Adding vmnic2/vmnic3 to Nested ESXi VMs ..."
-            $vmPortGroup = Get-VirtualNetwork -Name $inputData.VirtualDeployment.ESX.VMNetwork2 -Location ($cluster | Get-Datacenter)
-            if ($vmPortGroup.NetworkType -eq "Distributed") {
-                $vmPortGroup = Get-VDPortgroup -Name $inputData.VirtualDeployment.ESX.VMNetwork2
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -Portgroup $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            }
-            else {
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $vmPortGroup -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            }
-
-            $vm | New-AdvancedSetting -name "ethernet2.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-            $vm | New-AdvancedSetting -Name "ethernet2.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-
-            $vm | New-AdvancedSetting -name "ethernet3.filter4.name" -value "dvfilter-maclearn" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-            $vm | New-AdvancedSetting -Name "ethernet3.filter4.onFailure" -value "failOpen" -confirm:$false -ErrorAction SilentlyContinue | Out-File -Append -LiteralPath $verboseLogFile
-
-            Write-Logger "Updating vCPU Count to $($inputData.VirtualDeployment.Esx.vCPU) & vMEM to $($inputData.VirtualDeployment.Esx.vMemory) GB ..."
-            Set-VM -Server $viConnection -VM $vm -NumCpu $inputData.VirtualDeployment.Esx.vCPU -CoresPerSocket $inputData.VirtualDeployment.Esx.vCPU -MemoryGB $inputData.VirtualDeployment.Esx.vMemory -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
-           
-
-            Write-Logger "Updating vSAN Boot Disk size to $($inputData.VirtualDeployment.Esx.BootDisk) GB ..."
-            Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 1" | Set-HardDisk -CapacityGB $inputData.VirtualDeployment.Esx.BootDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            # vSAN ESA requires NVMe Controller
-            if ($inputdata.vSan.ESA) {
-
-                Write-Logger "Updating vSAN Disk Capacity VMDK size to $($inputData.VirtualDeployment.Esx.ESADisk1) GB  and $($inputData.VirtualDeployment.Esx.ESADisk2) GB .."
-                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $inputData.VirtualDeployment.Esx.ESADisk1 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $inputData.VirtualDeployment.Esx.ESADisk2 -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-
-                Write-Logger "Updating storage controller to NVMe for vSAN ESA ..."
-                $devices = $vm.ExtensionData.Config.Hardware.Device
-
-                $newControllerKey = -102
-
-                # Reconfigure 1 - Add NVMe Controller & Update Disk Mapping to new controller
-                $deviceChanges = @()
-                $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
-
-                $scsiController = $devices | Where-Object { $_.getType().Name -eq "ParaVirtualSCSIController" }
-                $scsiControllerDisks = $scsiController.device
-
-                $nvmeControllerAddSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
-                $nvmeControllerAddSpec.Device = [VMware.Vim.VirtualNVMEController]::new()
-                $nvmeControllerAddSpec.Device.Key = $newControllerKey
-                $nvmeControllerAddSpec.Device.BusNumber = 0
-                $nvmeControllerAddSpec.Operation = 'add'
-                $deviceChanges += $nvmeControllerAddSpec
-
-                foreach ($scsiControllerDisk in $scsiControllerDisks) {
-                    $device = $devices | Where-Object { $_.key -eq $scsiControllerDisk }
-
-                    $changeControllerSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
-                    $changeControllerSpec.Operation = 'edit'
-                    $changeControllerSpec.Device = $device
-                    $changeControllerSpec.Device.key = $device.key
-                    $changeControllerSpec.Device.unitNumber = $device.UnitNumber
-                    $changeControllerSpec.Device.ControllerKey = $newControllerKey
-                    $deviceChanges += $changeControllerSpec
-                }
-
-                $spec.deviceChange = $deviceChanges
-
-                $task = $vm.ExtensionData.ReconfigVM_Task($spec)
-                $task1 = Get-Task -Id ("Task-$($task.value)")
-                $task1 | Wait-Task | Out-Null
-
-                # Reconfigure 2 - Remove PVSCSI Controller
-                $spec = [VMware.Vim.VirtualMachineConfigSpec]::new()
-                $scsiControllerRemoveSpec = [VMware.Vim.VirtualDeviceConfigSpec]::new()
-                $scsiControllerRemoveSpec.Operation = 'remove'
-                $scsiControllerRemoveSpec.Device = $scsiController
-                $spec.deviceChange = $scsiControllerRemoveSpec
-
-                $task = $vm.ExtensionData.ReconfigVM_Task($spec)
-                $task1 = Get-Task -Id ("Task-$($task.value)")
-                $task1 | Wait-Task | Out-Null
-            }
-            else {
-                Write-Logger "Updating vSAN Cache VMDK size to $($inputData.VirtualDeployment.Esx.CachingvDisk) GB & Capacity VMDK size to $($inputData.VirtualDeployment.Esx.CapacityvDisk) GB ..."
-                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 2" | Set-HardDisk -CapacityGB $inputData.VirtualDeployment.Esx.CachingvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-                Get-HardDisk -Server $viConnection -VM $vm -Name "Hard disk 3" | Set-HardDisk -CapacityGB $inputData.VirtualDeployment.Esx.CapacityvDisk -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
-            }
-
-
-            Write-Logger "Powering On $vmname ..."
-            $vm | Start-Vm -RunAsync | Out-Null
-            
-        })
+if (-not $NoNestedMgmtEsx.IsPresent  ) {  
+    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
 }
 
 if (-not $NoCloudBuilderDeploy.IsPresent) {
@@ -507,6 +381,41 @@ if ($GeneratePsd1.isPresent) {
 
 
 
+if ($generateWldHostCommissionJson -eq 1) {
+    My-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
+
+    $commissionHostsUI = @()
+    $commissionHostsAPI = @()
+    $NestedESXiHostnameToIPsForWorkloadDomain.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
+        $hostFQDN = $_.Key + "." + $VMDomain
+
+        $tmp1 = [ordered] @{
+            "hostfqdn"        = $hostFQDN;
+            "username"        = "root";
+            "password"        = $VMPassword;
+            "networkPoolName" = "$VCFManagementDomainPoolName";
+            "storageType"     = "VSAN";
+        }
+        $commissionHostsUI += $tmp1
+
+        $tmp2 = [ordered] @{
+            "fqdn"          = $hostFQDN;
+            "username"      = "root";
+            "password"      = $VMPassword;
+            "networkPoolId" = "TBD";
+            "storageType"   = "VSAN";
+        }
+        $commissionHostsAPI += $tmp2
+    }
+
+    $vcfCommissionHostConfigUI = @{
+        "hostsSpec" = $commissionHostsUI
+    }
+
+    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
+    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
+}
+
 if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) { 
     Write-Logger "Generate the JSON workload ..."
     $orderedHashTable = Get-JsonWorkload -InputData $inputData
@@ -547,35 +456,11 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
 
     
     
-      #  Start-Sleep 60 
+        #  Start-Sleep 60 
         Invoke-BringUp -HclFile $inputdata.vSan.HclFile `
             -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
             -AdminPassword $(ConvertTo-SecureString -String $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force) `
-            -Json $inputJson  
-        <#$adminPwd = ConvertTo-SecureString $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force
-        $cred = [Management.Automation.PSCredential]::new('admin', $adminPwd)
-
-        if ($inputdata.vSan.HclFile) {
-            if ($UseSSH.isPresent) {
-                $hclFiledest = Split-Path -Path $inputdata.vSan.HclFile
-                Write-Logger "SCP HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
-                Set-SCPItem -ComputerName $inputData.VirtualDeployment.Cloudbuilder.Ip -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
-            }
-            Write-Logger "Copy-VMGuestFile HCL $($HCLJsonFile) file to $($inputdata.vSan.HclFile) ..."
-            Copy-VMGuestFile -Source $HCLJsonFile -Destination $inputdata.vSan.HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
-        }
-        Write-Logger "Submitting VCF Bringup request ..." 
-    
-        $bringupAPIParms = @{
-            Uri         = "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs"
-            Method      = 'POST'
-            Body        = $inputJson
-            ContentType = 'application/json'
-            Credential  = $cred
-        }
-        $bringupAPIReturn = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
-        Write-Logger "Open browser to the VMware Cloud Builder UI (https://${Hostname}) to monitor deployment progress ..."
-        #>
+            -Json $inputJson   
     }
 
 }
