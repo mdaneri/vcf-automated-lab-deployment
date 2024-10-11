@@ -6,3 +6,6 @@ vapp-test.json
 vapp-test.psd1
 .vscode/launch.json
 state.json
+vapp-test-WorkloadDomainApi.json
+vapp-test-WorkloadDomainUi.json
+test.xlsx 

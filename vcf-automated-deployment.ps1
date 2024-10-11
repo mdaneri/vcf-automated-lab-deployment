@@ -47,14 +47,15 @@ param(
     [switch]
     $NoNestedMgmtEsx,
 
+    [switch]
+    $NestedWldEsx,
+    
     [string]
     $EsxOVA,
 
     [string]
     $CloudBuilderOVA  
 )
-# Author: William Lam
-# Website: www.williamlam.com
 
 if ($ExcelFile) {
     install-Module -Name "ImportExcel" -Scope CurrentUser
@@ -334,9 +335,52 @@ if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
 
 
 if (-not $NoNestedMgmtEsx.IsPresent  ) {  
+    Write-Logger "Deploying $($inputData.VirtualDeployment.Esx.Hosts.Count) Managament ESX hosts ..."
     Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
 }
 
+if ( $NestedWldEsx.IsPresent  ) {  
+    if ($null -eq $inputData.VirtualDeployment.WldEsx) {
+        Write-Host -ForegroundColor Red "`nNo information available for the Workload ESX ...`n"
+        exit
+    }
+    Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
+    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
+    $VCFWorkloadDomainUIJSONFile = "$VAppName-WorkloadDomainUi.json"
+    $VCFWorkloadDomainAPIJSONFile = "$VAppName-WorkloadDomainApi.json"
+    Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
+    $commissionHostsUI = @()
+    $commissionHostsAPI = @()
+    foreach ($name in $inputData.VirtualDeployment.WldEsx.Hosts.keys) {
+        $hostFQDN = "$name.$($inputData.NetworkSpecs.DnsSpec.Domain)"
+
+        $tmp1 = [ordered] @{
+            "hostfqdn"        = $hostFQDN
+            "username"        = "root"
+            "password"        = $inputData.VirtualDeployment.WldEsx.Password
+            "networkPoolName" =  $InputData.Management.PoolName
+            "storageType"     = "VSAN"
+        }
+        $commissionHostsUI += $tmp1
+
+        $tmp2 = [ordered] @{
+            "fqdn"          = $hostFQDN
+            "username"      = "root"
+            "password"      = $inputData.VirtualDeployment.WldEsx.Password
+            "networkPoolId" = "TBD"
+            "storageType"   = "VSAN"
+        }
+        $commissionHostsAPI += $tmp2
+    }
+
+    $vcfCommissionHostConfigUI = @{
+        "hostsSpec" = $commissionHostsUI
+    }
+
+    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
+    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
+
+}
 if (-not $NoCloudBuilderDeploy.IsPresent) {
     $answer = ""
     $CloudbuilderVM = Get-VM -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
@@ -380,41 +424,7 @@ if ($GeneratePsd1.isPresent) {
 }
 
 
-
-if ($generateWldHostCommissionJson -eq 1) {
-    My-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
-
-    $commissionHostsUI = @()
-    $commissionHostsAPI = @()
-    $NestedESXiHostnameToIPsForWorkloadDomain.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
-        $hostFQDN = $_.Key + "." + $VMDomain
-
-        $tmp1 = [ordered] @{
-            "hostfqdn"        = $hostFQDN;
-            "username"        = "root";
-            "password"        = $VMPassword;
-            "networkPoolName" = "$VCFManagementDomainPoolName";
-            "storageType"     = "VSAN";
-        }
-        $commissionHostsUI += $tmp1
-
-        $tmp2 = [ordered] @{
-            "fqdn"          = $hostFQDN;
-            "username"      = "root";
-            "password"      = $VMPassword;
-            "networkPoolId" = "TBD";
-            "storageType"   = "VSAN";
-        }
-        $commissionHostsAPI += $tmp2
-    }
-
-    $vcfCommissionHostConfigUI = @{
-        "hostsSpec" = $commissionHostsUI
-    }
-
-    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
-    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
-}
+ 
 
 if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) { 
     Write-Logger "Generate the JSON workload ..."
@@ -456,7 +466,7 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
 
     
     
-        #  Start-Sleep 60 
+        Start-Sleep 60 
         Invoke-BringUp -HclFile $inputdata.vSan.HclFile `
             -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
             -AdminPassword $(ConvertTo-SecureString -String $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force) `

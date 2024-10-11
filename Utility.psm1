@@ -233,7 +233,6 @@ function Get-JsonWorkload {
         ceipEnabled                 = $InputData.CeipEnabled
         fipsEnabled                 = $InputData.FipsEnabled
 
-
         ntpServers                  = $InputData.NetworkSpecs.NtpServers
         dnsSpec                     = [ordered]@{
             subdomain  = $InputData.NetworkSpecs.DnsSpec.Subdomain
@@ -445,7 +444,7 @@ function Import-ExcelVCFData {
         $dsImport = Import-Excel -Path $Path -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 2 -EndColumn 7 -DataOnly -Raw -StartRow 12 -EndRow 21
         $overlayImport = Import-Excel -Path $Path -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 22 -EndRow 28
         $thumbprintImport = Import-Excel -Path $Path -NoHeader -WorksheetName 'Hosts and Networks' -StartColumn 9 -EndColumn 13 -DataOnly -Raw -StartRow 12 -EndRow 18
-        $Virtual = Import-Excel -Path $Path -NoHeader -WorksheetName 'Virtual Deployment' -StartColumn 5 -EndColumn 9 -DataOnly -Raw -StartRow 3 -EndRow 25
+        $Virtual = Import-Excel -Path $Path -NoHeader -WorksheetName 'Virtual Deployment' -StartColumn 5 -EndColumn 12 -DataOnly -Raw -StartRow 3 -EndRow 36
     
     }
     else {
@@ -453,7 +452,35 @@ function Import-ExcelVCFData {
         return $null
     } 
     $deployWithoutLicenseKeys = $licenseImport[0].P2 -eq 'No' #License Now
-        
+    if ( $Virtual[23].P1 -ne 'n/a') {
+        $wldHosts = [ordered]@{
+            Ova           = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
+            vCPU          = $Virtual[13].P3
+            vMemory       = $Virtual[14].P3
+            BootDisk      = $Virtual[15].P3
+            # Vsan disks
+            CachingvDisk  = $Virtual[16].P3
+            CapacityvDisk = $Virtual[17].P3
+            # ESA disks
+            ESADisk1      = $Virtual[16].P3
+            ESADisk2      = $Virtual[17].P3 
+            VMNetwork1    = $Virtual[18].P3 
+            VMNetwork2    = $Virtual[19].P3 
+            Syslog        = $Virtual[20].P3
+   
+            Password      = $credentialsImport[5].P2
+            Hosts         = [ordered]@{}
+        }
+        for ($i = 24 ; $i -lt 32; $i++) {
+            if ( $Virtual[$i].P1 -ne 'n/a') {
+                $wldHosts.Hosts[$($Virtual[$i].P1)] = [ordered]@{ Ip = $Virtual[$i].P2; SshThumbprint = ($null -eq $Virtual[$i].P4 )?"SHA256:DUMMY_VALUE":$Virtual[$i].P4; SslThumbprint = ($null -eq $thumbprintImport[$i].P6 )?"SHA25_DUMMY_VALUE":$thumbprintImport[$i].P6 }            
+            }
+        }
+    }
+    else {
+        $wldHosts = $null
+    }
+
     return [ordered]@{
         VirtualDeployment           = [ordered]@{ 
 
@@ -464,7 +491,7 @@ function Import-ExcelVCFData {
             VMFolder     = $Virtual[4].P2
 
             Esx          = [ordered]@{
-                Ova           = (($EsxOVA)? $EsxOVA : $Virtual[1].P4) 
+                Ova           = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
                 vCPU          = $Virtual[13].P2
                 vMemory       = $Virtual[14].P2
                 BootDisk      = $Virtual[15].P2
@@ -480,16 +507,15 @@ function Import-ExcelVCFData {
            
                 Password      = $credentialsImport[5].P2
                 Hosts         = [ordered]@{
-                    $esxImport[0].P1 = @{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[3].P4 }
-                    $esxImport[0].P2 = @{Ip = $esxImport[1].P2; SshThumbprint = ($null -eq $thumbprintImport[4].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[4].P2; SslThumbprint = ($null -eq $thumbprintImport[4].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[4].P4 }
-                    $esxImport[0].P3 = @{Ip = $esxImport[1].P3; SshThumbprint = ($null -eq $thumbprintImport[5].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[5].P2; SslThumbprint = ($null -eq $thumbprintImport[5].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[5].P4 }
-                    $esxImport[0].P4 = @{Ip = $esxImport[1].P4; SshThumbprint = ($null -eq $thumbprintImport[6].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[6].P2; SslThumbprint = ($null -eq $thumbprintImport[6].P4 )?"SHA256:DUMMY_VALUE":$thumbprintImport[6].P4 }
+                    $esxImport[0].P1 = [ordered]@{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4 )?"SHA25_DUMMY_VALUE":$thumbprintImport[3].P4 }
+                    $esxImport[0].P2 = [ordered]@{Ip = $esxImport[1].P2; SshThumbprint = ($null -eq $thumbprintImport[4].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[4].P2; SslThumbprint = ($null -eq $thumbprintImport[4].P4 )?"SHA25_DUMMY_VALUE":$thumbprintImport[4].P4 }
+                    $esxImport[0].P3 = [ordered]@{Ip = $esxImport[1].P3; SshThumbprint = ($null -eq $thumbprintImport[5].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[5].P2; SslThumbprint = ($null -eq $thumbprintImport[5].P4 )?"SHA25_DUMMY_VALUE":$thumbprintImport[5].P4 }
+                    $esxImport[0].P4 = [ordered]@{Ip = $esxImport[1].P4; SshThumbprint = ($null -eq $thumbprintImport[6].P2 )?"SHA256:DUMMY_VALUE":$thumbprintImport[6].P2; SslThumbprint = ($null -eq $thumbprintImport[6].P4 )?"SHA25_DUMMY_VALUE":$thumbprintImport[6].P4 }
                 }
-             
             }
-
+            WldEsx       = $wldHosts
             Cloudbuilder = [ordered]@{
-                Ova           = (($CloudBuilderOVA)? $CloudBuilderOVA :$Virtual[2].P4)
+                Ova           = (($CloudBuilderOVA)? $CloudBuilderOVA :$Virtual[2].P5)
                 # Cloud Builder Configurations
                 VMName        = $Virtual[6].P2
                 Hostname      = $Virtual[7].P2
@@ -500,7 +526,6 @@ function Import-ExcelVCFData {
             }
 
         }
-
 
         DeployWithoutLicenseKeys    = $deployWithoutLicenseKeys
         SddcId                      = $r[38].P2
@@ -716,6 +741,7 @@ function Add-VirtualEsx {
         $VsanEsa
         
     )
+    $answer = $null
     foreach ($VMName in  $Esx.Hosts.Keys) {
      
         $VMIPAddress = $Esx.Hosts[$VMname].Ip
@@ -726,7 +752,7 @@ function Add-VirtualEsx {
         if (! $redeploy) {
             continue
         }
-       $datacenter= $importLocation.Parentfolder|Get-Datacenter 
+        $datacenter = $importLocation.Parentfolder | Get-Datacenter 
         $ovfconfig = Get-OvfConfiguration $esx.Ova
         $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
         $ovfconfig.NetworkMapping.$networkMapLabel.value = $esx.VMNetwork1
