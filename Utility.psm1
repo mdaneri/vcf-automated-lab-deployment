@@ -295,7 +295,22 @@ function Get-JsonWorkload {
             vipFqdn                 = $InputData.Nsxt.vipFqdn
             nsxtLicense             = $InputData.Nsxt.License
             transportVlanId         = $InputData.Nsxt.TransportVlanId
-            ipAddressPoolSpec       = $InputData.Nsxt.ipAddressPoolSpec
+            ipAddressPoolSpec       = [ordered]@{ 
+                name        = $InputData.Nsxt.ipAddressPoolSpec.name
+                description = $InputData.Nsxt.ipAddressPoolSpec.description
+                subnets     = @(
+                    [ordered]@{
+                        ipAddressPoolRanges = @(
+                            [ordered]@{
+                                start = $InputData.Nsxt.ipAddressPoolSpec.subnets.ipAddressPoolRanges.start
+                                end   = $InputData.Nsxt.ipAddressPoolSpec.subnets.ipAddressPoolRanges.end
+                            }
+                        )
+                        cidr                = $InputData.Nsxt.ipAddressPoolSpec.subnets.cidr
+                        gateway             = $InputData.Nsxt.ipAddressPoolSpec.subnets.gateway
+                    }
+                )
+            }
         }
         vsanSpec                    = [ordered]@{
             licenseFile   = $InputData.vSan.LicenseFile

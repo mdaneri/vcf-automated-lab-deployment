@@ -66,8 +66,8 @@ if ($UseSSH.isPresent) {
 Import-Module -Name ./Utility.psm1
 
 #if ([string]::IsNullOrEmpty( $VAppName) ) {
-    #$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
-   # $VAppName = "Nested-VCF-Lab-$random_string"
+#$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
+# $VAppName = "Nested-VCF-Lab-$random_string"
 #}
 $script:verboseLogFile = "$VAppName-deployment.log"
 
@@ -226,6 +226,21 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
             Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the vApp name : "
             $VAppName = Read-Host  
         }
+    }
+    $exportFileName = $VAppName 
+    if ([string]::IsNullOrEmpty($exportFileName) -and ($GeneratePsd1.IsPresent -or $GenerateJson.IsPresent)) {
+        while ( [string]::IsNullOrEmpty($exportFileName)) {
+            Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the filename for the exported configuration : "
+            $exportFileName = Read-Host  
+        }
+    }
+
+    if ($GenerateJson.isPresent) { 
+        Write-Logger "Export the JSON workload to the file '$exportFileName.json'."
+    }
+     
+    if ($GeneratePsd1.isPresent) {
+        Write-Logger "Export the Configuration to the file '$exportFileName.psd1'."
     }
 
     if ($VCFBringup.IsPresent) {
@@ -497,8 +512,8 @@ if (-not $NoCloudBuilderDeploy.IsPresent) {
   
 
 if ($GeneratePsd1.isPresent) {
-    Write-Logger "Saving the Configuration file '$VAppName.psd1' ..."
-    Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$VAppName.psd1"
+    Write-Logger "Saving the Configuration file '$exportFileName.psd1' ..."
+    Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$exportFileName.psd1"
 }
 
 if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) { 
@@ -507,8 +522,8 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
     $inputJson = $orderedHashTable | ConvertTo-Json  -Depth 10
  
     if ($GenerateJson.isPresent) { 
-        Write-Logger "Saving the JSON workload file '$VAppName.json' ..."
-        $inputJson | out-file "$VAppName.json"
+        Write-Logger "Saving the JSON workload file '$exportFileName.json' ..."
+        $inputJson | out-file "$exportFileName.json"
     } 
 
     if ($VCFBringup.IsPresent) {
