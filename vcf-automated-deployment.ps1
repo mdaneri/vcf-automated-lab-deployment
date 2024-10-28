@@ -65,11 +65,11 @@ if ($UseSSH.isPresent) {
 }
 Import-Module -Name ./Utility.psm1
 
-if ([string]::IsNullOrEmpty( $VAppName) ) {
-    $random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
-    $VAppName = "Nested-VCF-Lab-$random_string"
-}
-$verboseLogFile = "$VAppName-deployment.log"
+#if ([string]::IsNullOrEmpty( $VAppName) ) {
+    #$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
+   # $VAppName = "Nested-VCF-Lab-$random_string"
+#}
+$script:verboseLogFile = "$VAppName-deployment.log"
 
  
 
@@ -113,7 +113,14 @@ if ($ConfigurationFile) {
     if (Test-Path $ConfigurationFile) {
         switch ( [System.IO.Path]::GetExtension($ConfigurationFile)) {
             '.psd1' {
-                $inputData = Import-PowerShellDataFile -Path $ConfigurationFile
+                $FileContent = Get-Content -Path $ConfigurationFile -Raw
+                # Use Invoke-Expression to evaluate the content as a hashtable
+                try {
+                    $inputData = Invoke-Expression $FileContent
+                }
+                catch {
+                    Write-Error "Failed to load configuration data: $_"
+                }
             }
             '.xlsx' {
                 $inputData = Import-ExcelVCFData -Path $ConfigurationFile 
@@ -187,7 +194,41 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.Ova
     Write-Host -NoNewline -ForegroundColor Green "Cloud Builder Image Path: "
     Write-Host -ForegroundColor White $inputData.VirtualDeployment.CloudBuilder.Ova
-    if ($VCFBringup) {
+
+    if (-not ($VCFBringup.IsPresent -or $NoCloudBuilderDeploy.IsPresent -or $NoNestedMgmtEsx.IsPresent -or $NestedWldEsx.IsPresent) ) {
+        Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want deploy VMware Cloud Foundation ? "
+        do {
+            $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
+        }until ( 'y', 'n' -contains $readAnswer )
+        $VCFBringup = @{IsPresent = $readAnswer -eq 'y' }
+
+        Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want import the VMware CloudBuilder ? "
+        do {
+            $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
+        }until ( 'y', 'n' -contains $readAnswer )
+        $NoCloudBuilderDeploy = @{IsPresent = $readAnswer -eq 'n' }
+
+        Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want create the Management VMware ESX virtual hosts ? "
+        do {
+            $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
+        }until ( 'y', 'n' -contains $readAnswer )
+        $NoNestedMgmtEsx = @{IsPresent = $readAnswer -eq 'n' }
+
+        Write-Host  -NoNewline -ForegroundColor Magenta "`nDo you want import the Workload Vmware ESX virtual hosts ? "
+        do {
+            $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
+        }until ( 'y', 'n' -contains $readAnswer )
+        $NestedWldEsx = @{IsPresent = $readAnswer -eq 'y' }
+    }
+
+    if ( (-not $NoVapp.IsPresent) -and ((-not $NoCloudBuilderDeploy.IsPresent) -or (-not $NoNestedMgmtEsx.IsPresent) -or $NestedWldEsx.IsPresent)) {
+        while ( [string]::IsNullOrEmpty($VAppName)) {
+            Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the vApp name : "
+            $VAppName = Read-Host  
+        }
+    }
+
+    if ($VCFBringup.IsPresent) {
         Write-Host -ForegroundColor Yellow "`n---- vCenter Server Deployment Target Configuration ----"
         Write-Host -NoNewline -ForegroundColor Green "vCenter Server Address: "
         Write-Host -ForegroundColor White $VIServer
@@ -208,7 +249,7 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.VMFolder
     }
     
-    if ((-not $NoCloudBuilderDeploy.IsPresent) -or (-not $NoNestedMgmtEsx.IsPresent)) {
+    if ((-not $NoCloudBuilderDeploy.IsPresent) -or (-not $NoNestedMgmtEsx.IsPresent) -or $NestedWldEsx.IsPresent) {
         Write-Host -NoNewline -ForegroundColor Green "VM vApp: "
         Write-Host -ForegroundColor White $VAppName
     }
@@ -250,14 +291,51 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
             Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.CapacityvDisk) GB"
         }
         Write-Host -NoNewline -ForegroundColor Green "Network Pool 1: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork1) GB"
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork1)"
         Write-Host -NoNewline -ForegroundColor Green "Network Pool 2: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork2) GB"
-     
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork2)"
+        Write-Host -NoNewline -ForegroundColor Green "Netmask "
+        Write-Host -ForegroundColor White $VMNetmask
+        Write-Host -NoNewline -ForegroundColor Green "Gateway: "
+        Write-Host -ForegroundColor White $inputData.NetworkSpecs.ManagementNetwork.gateway
+        Write-Host -NoNewline -ForegroundColor Green "DNS: "
+        Write-Host -ForegroundColor White $inputData.NetworkSpecs.DnsSpec.NameServers
+        Write-Host -NoNewline -ForegroundColor Green "NTP: "
+        Write-Host -ForegroundColor White $inputdata.NetworkSpecs.NtpServers
+        Write-Host -NoNewline -ForegroundColor Green "Syslog: "
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Syslog
+    }
 
-    
 
-        Write-Host -NoNewline -ForegroundColor Green "`nNetmask "
+    if ($NestedWldEsx.IsPresent) {
+        Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Workload Domain ----"
+        Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.WldEsx.Hosts.count
+        Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
+        Write-Host -ForegroundColor White ($inputData.VirtualDeployment.WldEsx.Hosts.Ip -join ', ')
+        Write-Host -NoNewline -ForegroundColor Green "vCPU: "
+        Write-Host -ForegroundColor White $inputData.VirtualDeployment.WldEsx.vCPU
+        Write-Host -NoNewline -ForegroundColor Green "vMEM: "
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.vMemory) GB"
+        Write-Host -NoNewline -ForegroundColor Green "Boot Disk VMDK: "
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.BootDisk) GB"
+        if ($inputdata.vSan.ESA) {
+            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 1 VMDK: "
+            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.ESADisk1) GB"
+            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 2 VMDK: "
+            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.ESADisk2) GB"
+        }
+        else {
+            Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
+            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.CachingvDisk) GB"
+            Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
+            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.CapacityvDisk) GB"
+        }
+        Write-Host -NoNewline -ForegroundColor Green "Network Pool 1: "
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.VMNetwork1)"
+        Write-Host -NoNewline -ForegroundColor Green "Network Pool 2: "
+        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.VMNetwork2)"
+        Write-Host -NoNewline -ForegroundColor Green "Netmask "
         Write-Host -ForegroundColor White $VMNetmask
         Write-Host -NoNewline -ForegroundColor Green "Gateway: "
         Write-Host -ForegroundColor White $inputData.NetworkSpecs.ManagementNetwork.gateway
@@ -358,7 +436,7 @@ if ( $NestedWldEsx.IsPresent  ) {
             "hostfqdn"        = $hostFQDN
             "username"        = "root"
             "password"        = $inputData.VirtualDeployment.WldEsx.Password
-            "networkPoolName" =  $InputData.Management.PoolName
+            "networkPoolName" = $InputData.Management.PoolName
             "storageType"     = "VSAN"
         }
         $commissionHostsUI += $tmp1
@@ -422,9 +500,6 @@ if ($GeneratePsd1.isPresent) {
     Write-Logger "Saving the Configuration file '$VAppName.psd1' ..."
     Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$VAppName.psd1"
 }
-
-
- 
 
 if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) { 
     Write-Logger "Generate the JSON workload ..."

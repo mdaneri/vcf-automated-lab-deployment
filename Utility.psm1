@@ -144,7 +144,7 @@ function Convert-HashtableToPsd1String {
     )
 
     $indentation = ("`t" * $IndentLevel) # Create the current indentation string
-    $output = "$indentation@{" + [Environment]::NewLine
+    $output = $indentation + "[ordered]@{" + [Environment]::NewLine
 
     $Hashtable.GetEnumerator() | Sort-Object -Property Key | ForEach-Object {
         $key = $_.Key
@@ -175,7 +175,7 @@ function Convert-HashtableToPsd1String {
                     $arrayOutput += "$currentIndentation`t'$item'" + [Environment]::NewLine
                 }
                 elseif ($item -is [hashtable] -or $item -is [System.Collections.IDictionary]) {
-                    $arrayOutput += (Convert-HashtableToPsd1String -Hashtable $item -IndentLevel ($IndentLevel + 2)).Replace("@{", "$currentIndentation`t@{") + [Environment]::NewLine
+                    $arrayOutput += (Convert-HashtableToPsd1String -Hashtable $item -IndentLevel ($IndentLevel + 2)).Replace("[ordered]@{", "$currentIndentation`t[ordered]@{") + [Environment]::NewLine
                 }
                 elseif ($item -is [int] -or $item -is [double]) {
                     $arrayOutput += "$currentIndentation`t$item" + [Environment]::NewLine
@@ -192,11 +192,11 @@ function Convert-HashtableToPsd1String {
             $output += "$currentIndentation`"$key`" = $value" + [Environment]::NewLine
         }
         elseif ($null -eq $value  ) {
-            $output += "$currentIndentation`"$key`" = null" + [Environment]::NewLine
+            $output += "$currentIndentation`"$key`" = `$null" + [Environment]::NewLine
         }
         else {
             # If the value is of another type, add it as an empty hashtable (for demonstration) with proper indentation
-            $output += "$currentIndentation`"$key`" = @{}" + [Environment]::NewLine
+            $output += "$currentIndentation`"$key`" = [ordered]@{}" + [Environment]::NewLine
         }
     }
 
@@ -627,7 +627,7 @@ function Import-ExcelVCFData {
                     End   = $rangeImport[1].p2
                 }
             }
-            VmManamegent      = @{
+            VmManamegent      = [ordered]@{
                 subnet       = $mgmtNetworkImport[0].P4
                 gateway      = $mgmtNetworkImport[0].P5
                 vlanId       = [int]"$($mgmtNetworkImport[0].P2)"
@@ -636,7 +636,7 @@ function Import-ExcelVCFData {
             }
         }
 
-        Nsxt                        = @{
+        Nsxt                        = [ordered]@{
             Managers          = @(
                 for ($i = 30; $i -le 32; $i++) {
                     if ($r[$i].P2 -eq 'n/a') {
@@ -649,7 +649,7 @@ function Import-ExcelVCFData {
                 }
             )
 
-            Password          = @{
+            Password          = [ordered]@{
                 Root  = $credentialsImport[10].P2
                 Admin = $credentialsImport[11].P2
                 Audit = $credentialsImport[12].P2
@@ -680,7 +680,7 @@ function Import-ExcelVCFData {
                 )
             }
         }
-        vSan                        = @{
+        vSan                        = [ordered]@{
             ESA           = ($r2[16].P2 -ieq 'yes')
             LicenseFile   = ($deployWithoutLicenseKeys)?"":$licenseImport[2].P2  
             HclFile       = ($r2[17].P2 )?$r2[17].P2 :""
