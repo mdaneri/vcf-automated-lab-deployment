@@ -560,7 +560,7 @@ if ($GenerateJson -or $VCFBringup) {
         $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
 
         # Define the server name
-        $serverName = "$($inputData.VirtualDeployment.Esx.keys[0]).$($NetworkSpecs.DnsSpec.Domain)"
+        $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
 
         # Start the job to run Get-vSANHcl with necessary parameters
         $job = Start-Job -ScriptBlock { 
@@ -568,7 +568,8 @@ if ($GenerateJson -or $VCFBringup) {
                 [string]$serverName, 
                 [Management.Automation.PSCredential]$cred
             )
-            Get-vSANHcl -Server $serverName -Credential $cred 
+            Import-Module -Name ./Utility.psm1
+            return Get-vSANHcl -Server $serverName -Credential $cred 
         } -ArgumentList $serverName, $cred
 
         # Wait for the job to complete

@@ -1029,7 +1029,7 @@ function Get-vSANHcl{
     }
 
     # Retrieve the latest vSAN HCL jsonUpdatedTime
-    $results = Invoke-WebRequest -Uri 'https://partnerweb.vmware.com/service/vsan/all.json?lastupdatedtime' -Headers @{'x-vmw-esp-clientid' = 'vsan-hcl-vcf-2023' }
+    $results = Invoke-WebRequest -Uri 'https://partnerweb.vmware.com/service/vsan/all.json?lastupdatedtime' -Headers @{'x-vmw-esp-clientid' = 'vsan-hcl-vcf-2024' }
     # Parse out content between '{...}'
     $pattern = '\{(.+?)\}'
     $matched = ([regex]::Matches($results, $pattern)).Value
