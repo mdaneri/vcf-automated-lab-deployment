@@ -60,7 +60,7 @@ param(
 if ($ExcelFile) {
     install-Module -Name "ImportExcel" -Scope CurrentUser
 }
-if ($UseSSH.isPresent) {
+if ($UseSSH) {
     install-module -Name "Posh-SSH"  -Scope CurrentUser
 }
 Import-Module -Name ./Utility.psm1
@@ -195,55 +195,55 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     Write-Host -NoNewline -ForegroundColor Green "Cloud Builder Image Path: "
     Write-Host -ForegroundColor White $inputData.VirtualDeployment.CloudBuilder.Ova
 
-    if (-not ($VCFBringup.IsPresent -or $NoCloudBuilderDeploy.IsPresent -or $NoNestedMgmtEsx.IsPresent -or $NestedWldEsx.IsPresent) ) {
+    if (-not ($VCFBringup -or $NoCloudBuilderDeploy -or $NoNestedMgmtEsx -or $NestedWldEsx) ) {
         Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want deploy VMware Cloud Foundation ? "
         do {
             $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
         }until ( 'y', 'n' -contains $readAnswer )
-        $VCFBringup = @{IsPresent = $readAnswer -eq 'y' }
+        $VCFBringup = $readAnswer -eq 'y' 
 
         Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want import the VMware CloudBuilder ? "
         do {
             $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
         }until ( 'y', 'n' -contains $readAnswer )
-        $NoCloudBuilderDeploy = @{IsPresent = $readAnswer -eq 'n' }
+        $NoCloudBuilderDeploy = $readAnswer -eq 'n' 
 
         Write-Host -NoNewline -ForegroundColor Magenta "`nDo you want create the Management VMware ESX virtual hosts ? "
         do {
             $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
         }until ( 'y', 'n' -contains $readAnswer )
-        $NoNestedMgmtEsx = @{IsPresent = $readAnswer -eq 'n' }
+        $NoNestedMgmtEsx = $readAnswer -eq 'n' 
 
         Write-Host  -NoNewline -ForegroundColor Magenta "`nDo you want import the Workload Vmware ESX virtual hosts ? "
         do {
             $readAnswer = Read-Host -Prompt "[Y]es/[N]o"
         }until ( 'y', 'n' -contains $readAnswer )
-        $NestedWldEsx = @{IsPresent = $readAnswer -eq 'y' }
+        $NestedWldEsx = $readAnswer -eq 'y' 
     }
 
-    if ( (-not $NoVapp.IsPresent) -and ((-not $NoCloudBuilderDeploy.IsPresent) -or (-not $NoNestedMgmtEsx.IsPresent) -or $NestedWldEsx.IsPresent)) {
+    if ( (-not $NoVapp) -and ((-not $NoCloudBuilderDeploy) -or (-not $NoNestedMgmtEsx) -or $NestedWldEsx)) {
         while ( [string]::IsNullOrEmpty($VAppName)) {
             Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the vApp name : "
             $VAppName = Read-Host  
         }
     }
     $exportFileName = $VAppName 
-    if ([string]::IsNullOrEmpty($exportFileName) -and ($GeneratePsd1.IsPresent -or $GenerateJson.IsPresent)) {
+    if ([string]::IsNullOrEmpty($exportFileName) -and ($GeneratePsd1 -or $GenerateJson)) {
         while ( [string]::IsNullOrEmpty($exportFileName)) {
             Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the filename for the exported configuration : "
             $exportFileName = Read-Host  
         }
     }
 
-    if ($GenerateJson.isPresent) { 
+    if ($GenerateJson) { 
         Write-Logger "Export the JSON workload to the file '$exportFileName.json'."
     }
      
-    if ($GeneratePsd1.isPresent) {
+    if ($GeneratePsd1) {
         Write-Logger "Export the Configuration to the file '$exportFileName.psd1'."
     }
 
-    if ($VCFBringup.IsPresent) {
+    if ($VCFBringup) {
         Write-Host -ForegroundColor Yellow "`n---- vCenter Server Deployment Target Configuration ----"
         Write-Host -NoNewline -ForegroundColor Green "vCenter Server Address: "
         Write-Host -ForegroundColor White $VIServer
@@ -264,12 +264,12 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.VMFolder
     }
     
-    if ((-not $NoCloudBuilderDeploy.IsPresent) -or (-not $NoNestedMgmtEsx.IsPresent) -or $NestedWldEsx.IsPresent) {
+    if ((-not $NoCloudBuilderDeploy) -or (-not $NoNestedMgmtEsx) -or $NestedWldEsx) {
         Write-Host -NoNewline -ForegroundColor Green "VM vApp: "
         Write-Host -ForegroundColor White $VAppName
     }
     
-    if (-not $NoCloudBuilderDeploy.IsPresent) {
+    if (-not $NoCloudBuilderDeploy) {
         Write-Host -ForegroundColor Yellow "`n---- Cloud Builder Configuration ----"
         Write-Host -NoNewline -ForegroundColor Green "VM Name: "
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.VMName
@@ -281,7 +281,7 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.PortGroup
     }
 
-    if (-not $NoNestedMgmtEsx.IsPresent) {
+    if (-not $NoNestedMgmtEsx) {
         Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Management Domain ----"
         Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.Hosts.count
@@ -322,7 +322,7 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     }
 
 
-    if ($NestedWldEsx.IsPresent) {
+    if ($NestedWldEsx) {
         Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Workload Domain ----"
         Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
         Write-Host -ForegroundColor White $inputData.VirtualDeployment.WldEsx.Hosts.count
@@ -369,7 +369,7 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
     Clear-Host
 }
 
-if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
+if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx) -and (!$VCFBringup) )) {
 
     # Determine which parameter set is being used
     switch ($PSCmdlet.ParameterSetName) {
@@ -400,9 +400,10 @@ if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
     $datastore = Get-Datastore -Server $viConnection -Name $inputData.VirtualDeployment.VMDatastore | Select-Object -First 1
     $cluster = Get-Cluster -Server $viConnection -Name $inputData.VirtualDeployment.VMCluster
     $vmhost = $cluster | Get-VMHost | Get-Random -Count 1
- 
+}
 
-    if (-not $NoVapp.IsPresent ) {
+if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx))) {
+    if (-not $NoVapp ) {
         # Check whether DRS is enabled as that is required to create vApp
         if ((Get-Cluster -Server $viConnection $cluster).DrsEnabled) {
 
@@ -427,12 +428,12 @@ if ((-not $NoNestedMgmtEsx) -or (-not $NoCloudBuilderDeploy.IsPresent)) {
 }
 
 
-if (-not $NoNestedMgmtEsx.IsPresent  ) {  
+if (-not $NoNestedMgmtEsx  ) {  
     Write-Logger "Deploying $($inputData.VirtualDeployment.Esx.Hosts.Count) Managament ESX hosts ..."
     Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
 }
 
-if ( $NestedWldEsx.IsPresent  ) {  
+if ( $NestedWldEsx  ) {  
     if ($null -eq $inputData.VirtualDeployment.WldEsx) {
         Write-Host -ForegroundColor Red "`nNo information available for the Workload ESX ...`n"
         exit
@@ -474,7 +475,7 @@ if ( $NestedWldEsx.IsPresent  ) {
     $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
 
 }
-if (-not $NoCloudBuilderDeploy.IsPresent) {
+if (-not $NoCloudBuilderDeploy) {
     $answer = ""
     $CloudbuilderVM = Get-VM -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
 
@@ -511,22 +512,22 @@ if (-not $NoCloudBuilderDeploy.IsPresent) {
 }
   
 
-if ($GeneratePsd1.isPresent) {
+if ($GeneratePsd1) {
     Write-Logger "Saving the Configuration file '$exportFileName.psd1' ..."
     Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$exportFileName.psd1"
 }
 
-if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) { 
+if ($GenerateJson -or $VCFBringup) { 
     Write-Logger "Generate the JSON workload ..."
     $orderedHashTable = Get-JsonWorkload -InputData $inputData
     $inputJson = $orderedHashTable | ConvertTo-Json  -Depth 10
  
-    if ($GenerateJson.isPresent) { 
+    if ($GenerateJson) { 
         Write-Logger "Saving the JSON workload file '$exportFileName.json' ..."
         $inputJson | out-file "$exportFileName.json"
     } 
 
-    if ($VCFBringup.IsPresent) {
+    if ($VCFBringup) {
         Write-Logger "Starting VCF Deployment Bringup ..." 
          
 
@@ -553,9 +554,34 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
                 Start-Sleep 30
             }
         }
+ 
+        # Convert password to secure string and create PSCredential
+        $esxPasswd = ConvertTo-SecureString -String $inputData.VirtualDeployment.Esx.Password -AsPlainText -Force
+        $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
 
-    
-    
+        # Define the server name
+        $serverName = "$($inputData.VirtualDeployment.Esx.keys[0]).$($NetworkSpecs.DnsSpec.Domain)"
+
+        # Start the job to run Get-vSANHcl with necessary parameters
+        $job = Start-Job -ScriptBlock { 
+            param (
+                [string]$serverName, 
+                [Management.Automation.PSCredential]$cred
+            )
+            Get-vSANHcl -Server $serverName -Credential $cred 
+        } -ArgumentList $serverName, $cred
+
+        # Wait for the job to complete
+        Wait-Job -Job $job
+
+        # Get the result
+        $result = Receive-Job -Job $job
+
+        # Output result and clean up
+        Write-Output "Job result: $result"
+        Remove-Job -Job $job
+
+
         Start-Sleep 60 
         Invoke-BringUp -HclFile $inputdata.vSan.HclFile `
             -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
@@ -565,7 +591,7 @@ if ($GenerateJson.isPresent -or $VCFBringup.IsPresent) {
 
 }
 
-if ($VCFBringup.IsPresent -and $uploadVCFNotifyScript -eq 1) {
+if ($VCFBringup -and $uploadVCFNotifyScript -eq 1) {
     if (Test-Path $srcNotificationScript) {
         $cbVM = Get-VM -Server $viConnection $inputData.VirtualDeployment.Cloudbuilder.Hostname
 
@@ -578,7 +604,7 @@ if ($VCFBringup.IsPresent -and $uploadVCFNotifyScript -eq 1) {
     }
 }
 
-if ($deployNestedESXiVMsForMgmt -eq 1 -or (-not $NoCloudBuilderDeploy.IsPresent)) {
+if ($deployNestedESXiVMsForMgmt -eq 1 -or (-not $NoCloudBuilderDeploy)) {
     Write-Logger "Disconnecting from $VIServer ..."
     Disconnect-VIServer -Server $viConnection -Confirm:$false
 }
