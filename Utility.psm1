@@ -96,16 +96,41 @@ function Test-VMForReImport {
 }
 
 
+<#
+.SYNOPSIS
+	Logs a message to both the console and a log file with a timestamp.
+
+.DESCRIPTION
+	This function writes a formatted log message with a timestamp to the console and appends the same message to a log file.
+	The console message color can be customized by specifying the `$color` parameter.
+
+.PARAMETER message
+	The message to be logged. This parameter is mandatory.
+
+.PARAMETER color
+	Optional. The color of the message in the console. Default is "green".
+
+.NOTES
+	This function requires the `$verboseLogFile` variable to be set with the log file path.
+#>
+
 Function Write-Logger {
     param(
-        [Parameter(Mandatory = $true)][String]$message,
-        [Parameter(Mandatory = $false)][String]$color = "green"
+        [Parameter(Mandatory = $true)]
+        [String]$message,
+
+        [Parameter(Mandatory = $false)]
+        [String]$color = "green"
     )
 
+    # Generate a timestamp for log entries
     $timeStamp = Get-Date -Format "MM-dd-yyyy_hh:mm:ss"
 
+    # Write the timestamp and message to the console
     Write-Host -NoNewline -ForegroundColor White "[$timestamp]"
     Write-Host -ForegroundColor $color " $message"
+
+    # Format the log message with the timestamp and append to the log file
     $logMessage = "[$timeStamp] $message"
     $logMessage | Out-File -Append -LiteralPath $verboseLogFile
 }
