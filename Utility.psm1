@@ -117,24 +117,67 @@ function Test-VMForReImport {
 Function Write-Logger {
     param(
         [Parameter(Mandatory = $true)]
-        [String]$message,
+        [AllowNull()]
+        [AllowEmptyString()]
+        [String]$Message,
 
         [Parameter(Mandatory = $false)]
-        [String]$color = "green"
+        [String]$ForegroundColor = "green",
+
+        [switch]
+        $NoNewline
     )
+    
 
     # Generate a timestamp for log entries
-    $timeStamp = Get-Date -Format "MM-dd-yyyy_hh:mm:ss"
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_hh:mm:ss" 
 
-    # Write the timestamp and message to the console
-    Write-Host -NoNewline -ForegroundColor White "[$timestamp]"
-    Write-Host -ForegroundColor $color " $message"
+    if ($null -ne $script:verboseLogFile ) {
+        if ( $NoNewline) {
+            if ($script:tempLogMessage.Length -eq 0) {
+                $null = $script:tempLogMessage.Append("[$timeStamp] ")
+            
+            }
+            $null = $script:tempLogMessage.Append($Message)
+        }
+        else {
+            if ( $script:tempLogMessage.Length -gt 0) {
+                $null = $script:tempLogMessage.Append($Message)
+                $script:tempLogMessage.ToString() | Out-File -Append -LiteralPath $script:verboseLogFile
+                Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
+                Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object($script:tempLogMessage.ToString())
+                $null = $script:tempLogMessage.Clear()
 
-    # Format the log message with the timestamp and append to the log file
-    $logMessage = "[$timeStamp] $message"
-    $logMessage | Out-File -Append -LiteralPath $verboseLogFile
+            }
+            else {
+                # Format the log message with the timestamp and append to the log file
+                "[$timeStamp] $Message" | Out-File -Append -LiteralPath $script:verboseLogFile
+                Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
+                Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object $Message
+            }
+        }
+    }
+    else {
+        # Write the timestamp and message to the console
+        Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
+        Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object $Message
+    }
 }
 
+
+function Start-Logger {
+    param(
+        [string]
+        $Path
+    )
+    $script:verboseLogFile = Join-Path -Path $Path -ChildPath "deployment.log"
+
+    if ($null -eq $script:tempLogMessage) {
+    
+        $script:tempLogMessage = [System.Text.StringBuilder]::new()
+    }
+    Write-Logger "---- Start New VMware Cloud Fondation Virtual Deployment ----"
+}
 
 <#
 .SYNOPSIS
@@ -970,19 +1013,12 @@ function Import-ExcelVCFData {
 	to a specified Cloud Builder's API endpoint. If an HCL file is provided, the function transfers it 
 	to the Cloud Builder via SCP or VM guest file copy, depending on the deployment environment.
 
-.PARAMETER HclFile
-	Optional. Specifies the path to the HCL file. If provided, the file will be transferred to the Cloud Builder 
-	either via SCP or using Copy-VMGuestFile.
-
 .PARAMETER CloudbuilderFqdn
 	The FQDN of the VMware Cloud Builder server where the bringup process will be initiated.
 
 .PARAMETER AdminPassword
 	The administrator password as a SecureString. Used to create a PSCredential for authentication with Cloud Builder.
-
-.PARAMETER Json
-	The JSON payload to be submitted in the bringup request, which defines the configuration for VCF bringup.
-
+ 
 .EXAMPLE
 	# Invoke bringup with HCL file and JSON payload
 	Invoke-BringUp -HclFile "C:\path\to\hcl.json" -CloudbuilderFqdn "cloudbuilder.example.com" -AdminPassword (ConvertTo-SecureString "password" -AsPlainText -Force) -Json $jsonPayload
@@ -993,42 +1029,47 @@ function Import-ExcelVCFData {
 #>
 function Invoke-BringUp {
     param(
-        [string]
-        $HclFile,
+        [System.Collections.Specialized.OrderedDictionary]
+        $InputData,
 
         [string]
         $CloudbuilderFqdn,
 
         [securestring]
-        $AdminPassword,
+        $AdminPassword, 
 
         [string]
-        $Json
+        $Path
     )
-
+    
     # Create a PSCredential for use with SCP or API requests
     $cred = [Management.Automation.PSCredential]::new('admin', $AdminPassword)
 
     # Check if an HCL file is provided for transfer
-    if ($HclFile) {
+    if ($InputData.vSan.HclFile) {
+        $hclFileSource = Join-Path -Path $Path -ChildPath $(split-path $InputData.vSan.HclFile -Leaf)
+        $hclFileDest =  $InputData.vSan.HclFile 
         # Transfer HCL file via SCP if SSH is available
-        if ($UseSSH.isPresent) {
-            $hclFiledest = Split-Path -Path $HclFile
-            Write-Logger "SCP HCL $($HCLJsonFile) file to $($HclFile) ..."
-            Set-SCPItem -ComputerName $CloudbuilderFqdn -Credential $cred -Path $HCLJsonFile -Destination $hclFiledest -AcceptKey
+        if ($UseSSH.isPresent) { 
+            Write-Logger "SCP HCL $($hclFileSource) file to $($hclFileDest) ..."
+            Set-SCPItem -ComputerName $CloudbuilderFqdn -Credential $cred -Path $hclFileSource -Destination $hclFileDest -AcceptKey
         }
-
-        # If no VM object is defined, find the Cloud Builder VM by its IP address
-        if (!$CloudbuilderVM) {
-            $CloudbuilderVM = Get-VM | Where-Object {
+        else {
+            # If no VM object is defined, find the Cloud Builder VM by its IP address
+            if (!$CloudbuilderVM) {
+                $CloudbuilderVM = Get-VM | Where-Object {
                    (Get-VMGuest -VM $_).IPAddress -contains $CloudbuilderFqdn 
+                }
             }
-        }
 
-        # Transfer HCL file using Copy-VMGuestFile if VM object is found
-        Write-Logger "Copy-VMGuestFile HCL $($HCLJsonFile) file to $($HclFile) ..."
-        Copy-VMGuestFile -Source $HCLJsonFile -Destination $HclFile -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
+            # Transfer HCL file using Copy-VMGuestFile if VM object is found
+            Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($hclFileDest) ..."
+            Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
+        }
     }
+
+    Write-Logger "Generate the JSON workload ..."
+    $json = Get-JsonWorkload -InputData $inputData | ConvertTo-Json  -Depth 10 -Compress
 
     # Log message indicating that the bringup request is being submitted
     Write-Logger "Submitting VCF Bringup request ..."
@@ -1139,7 +1180,7 @@ function Add-VirtualEsx {
     
         # Check if VM deployment failed
         if (-not $vm) {
-            Write-Logger -Color red -Message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
+            Write-Logger -ForegroundColor red -Message "Deploy of $( $ovfconfig.common.guestinfo.hostname.value) failed."
             @{date = (Get-Date); failure = $true; vapp = $ImportLocation; component = 'ESX' } | ConvertTo-Json | Out-File state.json
             exit
         }
@@ -1274,15 +1315,17 @@ function Add-VirtualEsx {
 function Get-vSANHcl {
     param (
         [string]$Server,
-        [pscredential]$Credential
+        [pscredential]$Credential,
+        [string]
+        $Path
     )
 
     # Connect to the ESXi host using provided credentials
-    Connect-VIServer -Server $Server -Credential $Credential
+    $null = Connect-VIServer -Server $Server -Credential $Credential
     $vmhost = Get-VMHost  
     $supportedESXiReleases = @("ESXi 8.0 U2", "ESXi 8.0 U3")
 
-    Write-Host -ForegroundColor Green "`nCollecting SSD information from ESXi host ${vmhost} ... "
+    Write-Logger -ForegroundColor Green -Message "`nCollecting SSD information from ESXi host ${vmhost} ... "
 
     # Retrieve VIBs and storage device information from ESXi
     $imageManager = Get-View ($Vmhost.ExtensionData.ConfigManager.ImageConfigManager)
@@ -1447,15 +1490,202 @@ function Get-vSANHcl {
 
     # Generate the output filename with timestamp
     $dateTimeGenerated = Get-Date -UFormat "%m_%d_%Y_%H_%M_%S"
-    $outputFileName = "custom_vsan_esa_hcl_${dateTimeGenerated}.json"
+    $filename = "custom_vsan_esa_hcl_${dateTimeGenerated}.json"
+    $outputFileName = Join-Path -Path $Path -ChildPath $filename
 
-    Write-Host -ForegroundColor Green "Saving Custom vSAN ESA HCL to ${outputFileName}`n"
+    # Write-Logger -ForegroundColor Green -Message "Saving Custom vSAN ESA HCL to ${outputFileName}`n"
     $hclObject | ConvertTo-Json -Depth 12 | Out-File -FilePath $outputFileName
 
     # Return the generated filename
-    return $outputFileName 
+    return $filename 
 }
 
+
+function Get-FirstEsxHcl {
+    param (
+        [System.Management.Automation.OrderedHashtable]
+        $inputData,
+        [string]
+        $Path
+    )
+
+    # Convert password to secure string and create PSCredential
+    $esxPasswd = ConvertTo-SecureString -String $inputData.VirtualDeployment.Esx.Password -AsPlainText -Force
+    $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
+
+    # Define the server name
+    $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
+
+    Write-Logger "Extract the vSAN HCL from '$serverName' ..."
+    # Start the job to run Get-vSANHcl with necessary parameters
+    $job = Start-Job -ScriptBlock { 
+        param (
+            [string]$serverName, 
+            [Management.Automation.PSCredential]$cred,
+            [string]$Path
+        )
+        Import-Module -Name ./Utility.psm1
+        return Get-vSANHcl -Server $serverName -Credential $cred -Path $Path
+    } -ArgumentList $serverName, $cred, $Path
+
+    # Wait for the job to complete
+    Wait-Job -Job $job
+   
+    # Get the result
+    $result = Receive-Job -Job $job
+
+    Write-Logger "vSAN HCL file saved as '$result' "
+
+    $InputData.vSan.HclFile = "/home/admin/$result"
+
+    # Output result and clean up
+    #Write-Output "Job result: $($InputData.vSan.HclFile)"
+    Remove-Job -Job $job
+    
+}
+
+
+
+function Show-Summary {
+    param(
+        [switch]
+        $VCFBringup,
+
+        [switch]
+        $NoCloudBuilderDeploy,
+
+        [switch]
+        $NoNestedMgmtEsx,
+
+        [switch]
+        $NestedWldEsx,
+
+        [System.Management.Automation.OrderedHashtable]
+        $InputData
+    )
+    if ($VCFBringup) {
+        Write-Host
+        Write-Logger -ForegroundColor Yellow "---- vCenter Server Deployment Target Configuration ----"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "vCenter Server Address: "
+        Write-Logger -ForegroundColor White -Message $VIServer
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM Network: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.PortGroup
+
+        Write-Logger -NoNewline -ForegroundColor Green -Message "ESX VM Network 1: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.ESX.VMNetwork1
+
+        Write-Logger -NoNewline -ForegroundColor Green -Message "ESX VM Network 2: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.ESX.VMNetwork2
+
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM Storage: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.VMDatastore
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM Cluster: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.VMCluster
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM Folder: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.VMFolder
+    }
+    
+    if ((-not $NoCloudBuilderDeploy) -or (-not $NoNestedMgmtEsx) -or $NestedWldEsx) {
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM vApp: "
+        Write-Logger -ForegroundColor White -Message $VAppName
+    }
+    
+    if (-not $NoCloudBuilderDeploy) {
+        Write-Host
+        Write-Logger -ForegroundColor Yellow "---- Cloud Builder Configuration ----"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "VM Name: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.VMName
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Hostname: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.Hostname
+        Write-Logger -NoNewline -ForegroundColor Green -Message "IP Address: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.Ip
+        Write-Logger -NoNewline -ForegroundColor Green -Message "PortGroup: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.PortGroup
+    }
+
+    if (-not $NoNestedMgmtEsx) {
+        Write-Host
+        Write-Logger -ForegroundColor Yellow "---- vESXi Configuration for VCF Management Domain ----"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "# of Nested ESXi VMs: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Esx.Hosts.count
+        Write-Logger -NoNewline -ForegroundColor Green -Message "IP Address(s): "
+        Write-Logger -ForegroundColor White -Message ($InputData.VirtualDeployment.Esx.Hosts.Values.Ip -join ', ')
+        Write-Logger -NoNewline -ForegroundColor Green -Message "vCPU: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Esx.vCPU
+        Write-Logger -NoNewline -ForegroundColor Green -Message "vMEM: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.vMemory) GB"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Boot Disk VMDK: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.BootDisk) GB"
+        if ($InputData.vSan.ESA) {
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 1 VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.ESADisk1) GB"
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 2 VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.ESADisk2) GB"
+        }
+        else {
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Caching VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.CachingvDisk) GB"
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Capacity VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.CapacityvDisk) GB"
+        }
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 1: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.VMNetwork1)"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.VMNetwork2)"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask "
+        Write-Logger -ForegroundColor White -Message $VMNetmask
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
+        Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
+        Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
+        Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.DnsSpec.NameServers
+        Write-Logger -NoNewline -ForegroundColor Green -Message "NTP: "
+        Write-Logger -ForegroundColor White -Message ($InputData.NetworkSpecs.NtpServers -join ',')
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Syslog: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Syslog 
+    }
+
+
+    if ($NestedWldEsx) {
+        Write-Host
+        Write-Logger -ForegroundColor Yellow "---- vESXi Configuration for VCF Workload Domain ----"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "# of Nested ESXi VMs: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.WldEsx.Hosts.count
+        Write-Logger -NoNewline -ForegroundColor Green -Message "IP Address(s): "
+        Write-Logger -ForegroundColor White ($InputData.VirtualDeployment.WldEsx.Hosts.Values.Ip -join ', ')
+        Write-Logger -NoNewline -ForegroundColor Green -Message "vCPU: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.WldEsx.vCPU
+        Write-Logger -NoNewline -ForegroundColor Green -Message "vMEM: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.vMemory) GB"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Boot Disk VMDK: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.BootDisk) GB"
+        if ($InputData.vSan.ESA) {
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 1 VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.ESADisk1) GB"
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 2 VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.ESADisk2) GB"
+        }
+        else {
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Caching VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.CachingvDisk) GB"
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Capacity VMDK: "
+            Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.CapacityvDisk) GB"
+        }
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 1: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.VMNetwork1)"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
+        Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.VMNetwork2)"
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask "
+        Write-Logger -ForegroundColor White -Message $VMNetmask
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
+        Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
+        Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
+        Write-Logger -ForegroundColor White -Message ($InputData.NetworkSpecs.DnsSpec.NameServers -join ',')
+        Write-Logger -NoNewline -ForegroundColor Green -Message "NTP: "
+        Write-Logger -ForegroundColor White -Message ($InputData.NetworkSpecs.NtpServers -join ',')
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Syslog: "
+        Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Syslog
+    }
+}
 # Export the specified functions from this module to make them available for use when the module is imported
 Export-ModuleMember -Function Test-VMForReImport, Write-Logger, Get-TransportZone, ConvertTo-Netmask, Convert-HashtableToPsd1String, Get-JsonWorkload
-Export-ModuleMember -Function Import-ExcelVCFData, Invoke-BringUp, Add-VirtualEsx, Get-VSANHcl
+Export-ModuleMember -Function Import-ExcelVCFData, Invoke-BringUp, Add-VirtualEsx, Get-VSanHcl, Show-Summary, Start-Logger, Get-FirstEsxHcl

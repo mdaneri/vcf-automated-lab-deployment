@@ -17,8 +17,8 @@ param(
     [Parameter(ParameterSetName = 'Credential', Mandatory = $false)]
     [string]$ConfigurationFile,
 
-    [string]
-    $HCLJsonFile = "$PWD/nested-esxi-vsan-esa-hcl.json",
+    # [string]
+    #$HCLJsonFile = "$PWD/nested-esxi-vsan-esa-hcl.json",
     
     [string]
     $VAppName,
@@ -27,10 +27,10 @@ param(
     $UseSSH,
     
     [switch]
-    $GenerateJson,
+    $GenerateJsonFile,
     
     [switch]
-    $GeneratePsd1,
+    $GeneratePsd1File,
     
     [switch]
     $VCFBringup,
@@ -69,14 +69,9 @@ Import-Module -Name ./Utility.psm1
 #$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
 # $VAppName = "Nested-VCF-Lab-$random_string"
 #}
-$script:verboseLogFile = "$VAppName-deployment.log"
-
  
 
-
  
-
-
 # row   vSphere Resource Pools                                                                                                                            Value
 #$r[24] Resource Pool SDDC Management                                                                                                                     sfo-m01-cluster-001-management-001
 #$r[25] Resource Pool User Edge                                                                                                                           sfo-m01-cluster-001-compute-002
@@ -131,7 +126,7 @@ if ($ConfigurationFile) {
         }
     }
     else {
-        Write-Host -ForegroundColor Red "`nThe file '$ConfigurationFile' does not exist ...`n"
+        Write-Logger -ForegroundColor Red "`nThe file '$ConfigurationFile' does not exist ...`n"
         exit 1
     }
 
@@ -144,7 +139,11 @@ if ($ConfigurationFile) {
 $VMNetmask = ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet
 
 # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
-if ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.0") {
+
+if ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.1") {
+    $VCFVersion = "5.2.1"
+}
+elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.0") {
     $VCFVersion = "5.2.0"
 }
 elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.1.1") {
@@ -158,7 +157,7 @@ else {
 }
 
 if ($null -eq $VCFVersion) {
-    Write-Host -ForegroundColor Red "`nOnly VCF 5.1.0, 5.1.1 & 5.2 is currently supported ...`n"
+    Write-Host -ForegroundColor Red "`nOnly VCF 5.1.0, 5.1.1, 5.2.0 and 5.2.1 are currently supported ...`n"
     exit
 }
 
@@ -226,141 +225,36 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
             Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the vApp name : "
             $VAppName = Read-Host  
         }
-    }
+    } 
     $exportFileName = $VAppName 
-    if ([string]::IsNullOrEmpty($exportFileName) -and ($GeneratePsd1 -or $GenerateJson)) {
+    if ([string]::IsNullOrEmpty($exportFileName) -and ($GeneratePsd1File -or $GenerateJsonFile)) {
         while ( [string]::IsNullOrEmpty($exportFileName)) {
             Write-Host -NoNewline -ForegroundColor Magenta "`nPlease specify the filename for the exported configuration : "
             $exportFileName = Read-Host  
         }
     }
 
-    if ($GenerateJson) { 
-        Write-Logger "Export the JSON workload to the file '$exportFileName.json'."
+    Start-Logger -Path (Join-Path -Path $PWD -ChildPath $exportFileName) 
+    
+    $path = Join-Path -Path $PWD -ChildPath $exportFileName
+
+    if (!(Test-Path -Path $path)) {
+        New-Item -Path $path -ItemType Directory
+    }
+    if ($GenerateJsonFile) { 
+        Write-Logger "Export the JSON workload to the file '$( Join-Path -Path $path -ChildPath "$exportFileName.json")'."
     }
      
-    if ($GeneratePsd1) {
-        Write-Logger "Export the Configuration to the file '$exportFileName.psd1'."
+    if ($GeneratePsd1File) {
+        Write-Logger "Export the Configuration to the file '$( Join-Path -Path $path -ChildPath "$exportFileName.psd1")'."
     }
 
-    if ($VCFBringup) {
-        Write-Host -ForegroundColor Yellow "`n---- vCenter Server Deployment Target Configuration ----"
-        Write-Host -NoNewline -ForegroundColor Green "vCenter Server Address: "
-        Write-Host -ForegroundColor White $VIServer
-        Write-Host -NoNewline -ForegroundColor Green "VM Network: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.PortGroup
-
-        Write-Host -NoNewline -ForegroundColor Green "ESX VM Network 1: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.ESX.VMNetwork1
-
-        Write-Host -NoNewline -ForegroundColor Green "ESX VM Network 2: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.ESX.VMNetwork2
-
-        Write-Host -NoNewline -ForegroundColor Green "VM Storage: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.VMDatastore
-        Write-Host -NoNewline -ForegroundColor Green "VM Cluster: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.VMCluster
-        Write-Host -NoNewline -ForegroundColor Green "VM Folder: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.VMFolder
-    }
+    Show-Summary -InputData $InputData `
+        -VCFBringup:$VCFBringup `
+        -NoCloudBuilderDeploy:$NoCloudBuilderDeploy `
+        -NoNestedMgmtEsx:$NoNestedMgmtEsx `
+        -NestedWldEsx:$NestedWldEsx
     
-    if ((-not $NoCloudBuilderDeploy) -or (-not $NoNestedMgmtEsx) -or $NestedWldEsx) {
-        Write-Host -NoNewline -ForegroundColor Green "VM vApp: "
-        Write-Host -ForegroundColor White $VAppName
-    }
-    
-    if (-not $NoCloudBuilderDeploy) {
-        Write-Host -ForegroundColor Yellow "`n---- Cloud Builder Configuration ----"
-        Write-Host -NoNewline -ForegroundColor Green "VM Name: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.VMName
-        Write-Host -NoNewline -ForegroundColor Green "Hostname: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.Hostname
-        Write-Host -NoNewline -ForegroundColor Green "IP Address: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.Ip
-        Write-Host -NoNewline -ForegroundColor Green "PortGroup: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Cloudbuilder.PortGroup
-    }
-
-    if (-not $NoNestedMgmtEsx) {
-        Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Management Domain ----"
-        Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.Hosts.count
-        Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
-        Write-Host -ForegroundColor White ($inputData.VirtualDeployment.Esx.Hosts.Ip -join ', ')
-        Write-Host -NoNewline -ForegroundColor Green "vCPU: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Esx.vCPU
-        Write-Host -NoNewline -ForegroundColor Green "vMEM: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.vMemory) GB"
-        Write-Host -NoNewline -ForegroundColor Green "Boot Disk VMDK: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.BootDisk) GB"
-        if ($inputdata.vSan.ESA) {
-            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 1 VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.ESADisk1) GB"
-            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 2 VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.ESADisk2) GB"
-        }
-        else {
-            Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.CachingvDisk) GB"
-            Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.CapacityvDisk) GB"
-        }
-        Write-Host -NoNewline -ForegroundColor Green "Network Pool 1: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork1)"
-        Write-Host -NoNewline -ForegroundColor Green "Network Pool 2: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.Esx.VMNetwork2)"
-        Write-Host -NoNewline -ForegroundColor Green "Netmask "
-        Write-Host -ForegroundColor White $VMNetmask
-        Write-Host -NoNewline -ForegroundColor Green "Gateway: "
-        Write-Host -ForegroundColor White $inputData.NetworkSpecs.ManagementNetwork.gateway
-        Write-Host -NoNewline -ForegroundColor Green "DNS: "
-        Write-Host -ForegroundColor White $inputData.NetworkSpecs.DnsSpec.NameServers
-        Write-Host -NoNewline -ForegroundColor Green "NTP: "
-        Write-Host -ForegroundColor White $inputdata.NetworkSpecs.NtpServers
-        Write-Host -NoNewline -ForegroundColor Green "Syslog: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Syslog
-    }
-
-
-    if ($NestedWldEsx) {
-        Write-Host -ForegroundColor Yellow "`n---- vESXi Configuration for VCF Workload Domain ----"
-        Write-Host -NoNewline -ForegroundColor Green "# of Nested ESXi VMs: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.WldEsx.Hosts.count
-        Write-Host -NoNewline -ForegroundColor Green "IP Address(s): "
-        Write-Host -ForegroundColor White ($inputData.VirtualDeployment.WldEsx.Hosts.Ip -join ', ')
-        Write-Host -NoNewline -ForegroundColor Green "vCPU: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.WldEsx.vCPU
-        Write-Host -NoNewline -ForegroundColor Green "vMEM: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.vMemory) GB"
-        Write-Host -NoNewline -ForegroundColor Green "Boot Disk VMDK: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.BootDisk) GB"
-        if ($inputdata.vSan.ESA) {
-            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 1 VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.ESADisk1) GB"
-            Write-Host -NoNewline -ForegroundColor Green "Disk Objeck 2 VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.ESADisk2) GB"
-        }
-        else {
-            Write-Host -NoNewline -ForegroundColor Green "Caching VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.CachingvDisk) GB"
-            Write-Host -NoNewline -ForegroundColor Green "Capacity VMDK: "
-            Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.CapacityvDisk) GB"
-        }
-        Write-Host -NoNewline -ForegroundColor Green "Network Pool 1: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.VMNetwork1)"
-        Write-Host -NoNewline -ForegroundColor Green "Network Pool 2: "
-        Write-Host -ForegroundColor White "$($inputData.VirtualDeployment.WldEsx.VMNetwork2)"
-        Write-Host -NoNewline -ForegroundColor Green "Netmask "
-        Write-Host -ForegroundColor White $VMNetmask
-        Write-Host -NoNewline -ForegroundColor Green "Gateway: "
-        Write-Host -ForegroundColor White $inputData.NetworkSpecs.ManagementNetwork.gateway
-        Write-Host -NoNewline -ForegroundColor Green "DNS: "
-        Write-Host -ForegroundColor White $inputData.NetworkSpecs.DnsSpec.NameServers
-        Write-Host -NoNewline -ForegroundColor Green "NTP: "
-        Write-Host -ForegroundColor White $inputdata.NetworkSpecs.NtpServers
-        Write-Host -NoNewline -ForegroundColor Green "Syslog: "
-        Write-Host -ForegroundColor White $inputData.VirtualDeployment.Syslog
-    }
     Write-Host -ForegroundColor Magenta "`nWould you like to proceed with this deployment?`n"
     $answer = Read-Host -Prompt "Do you accept (Y or N)"
     if (( 'yes', 'y', 'true', 1 -notcontains $answer)) {
@@ -393,7 +287,7 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx) -
     Write-Logger "Connecting to Management vCenter Server $VIServer ..."
     $viConnection = Connect-VIServer $VIServer -Credential $credential -WarningAction SilentlyContinue 
     if (!$viConnection) {
-        Write-Logger -color red  -message "Login user:$($credential.UserName)  Failed" 
+        Write-Logger -ForegroundColor red  -message "Login user:$($credential.UserName)  Failed" 
         exit
     }
 
@@ -409,12 +303,12 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx)))
 
             if (-Not (Get-Folder $inputData.VirtualDeployment.VMFolder -ErrorAction Ignore)) {
                 Write-Logger "Creating VM Folder $($inputData.VirtualDeployment.VMFolder) ..."
-                $folder = New-Folder -Name $inputData.VirtualDeployment.VMFolder -Server $viConnection -Location (Get-Datacenter $inputData.VirtualDeployment.VMDatacenter | Get-Folder vm)
+                $vmFolder = New-Folder -Name $inputData.VirtualDeployment.VMFolder -Server $viConnection -Location (Get-Datacenter $inputData.VirtualDeployment.VMDatacenter | Get-Folder vm)
             }
             $VApp = Get-VApp -Name $VAppName -Server $viConnection -Location $cluster -ErrorAction SilentlyContinue
             if ( $null -eq $VApp) {
                 Write-Logger "Creating vApp $VAppName ..."
-                $VApp = New-VApp -Name $VAppName -Server $viConnection -Location $cluster -InventoryLocation $folder
+                $VApp = New-VApp -Name $VAppName -Server $viConnection -Location $cluster -InventoryLocation $vmFolder
             }
             $importLocation = $VApp
         }
@@ -435,7 +329,7 @@ if (-not $NoNestedMgmtEsx  ) {
 
 if ( $NestedWldEsx  ) {  
     if ($null -eq $inputData.VirtualDeployment.WldEsx) {
-        Write-Host -ForegroundColor Red "`nNo information available for the Workload ESX ...`n"
+        Write-Logger -ForegroundColor Red "`nNo information available for the Workload ESX ...`n"
         exit
     }
     Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
@@ -502,7 +396,7 @@ if (-not $NoCloudBuilderDeploy) {
         Write-Logger "Deploying Cloud Builder VM $($inputData.VirtualDeployment.Cloudbuilder.VMName) ..."
         $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilder.Ova -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
         if (-not $CloudbuilderVM) {
-            Write-Logger -color red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.VMName) failed."
+            Write-Logger -ForegroundColor red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.VMName) failed."
             @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
             exit
         }
@@ -510,23 +404,24 @@ if (-not $NoCloudBuilderDeploy) {
         $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
 }
-  
+ 
 
-if ($GeneratePsd1) {
-    Write-Logger "Saving the Configuration file '$exportFileName.psd1' ..."
-    Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$exportFileName.psd1"
+if ($GeneratePsd1File) {
+    $exportPsd1 = Join-Path -Path $path -ChildPath "$exportFileName.psd1"
+    Write-Logger "Saving the Configuration file '$exportPsd1' ..."
+    Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$exportPsd1"
 }
 
-if ($GenerateJson -or $VCFBringup) { 
-    Write-Logger "Generate the JSON workload ..."
-    $orderedHashTable = Get-JsonWorkload -InputData $inputData
-    $inputJson = $orderedHashTable | ConvertTo-Json  -Depth 10
- 
-    if ($GenerateJson) { 
-        Write-Logger "Saving the JSON workload file '$exportFileName.json' ..."
-        $inputJson | out-file "$exportFileName.json"
-    } 
+if ($GenerateJsonFile -or $VCFBringup) { 
 
+    Get-FirstEsxHcl -InputData $inputData -Path $path 
+    
+    if ($GenerateJsonFile) { 
+        $exportJson = Join-Path -Path $path -ChildPath "$exportFileName.json"
+        Write-Logger "Saving the JSON workload file '$exportJson' ..."
+        Get-JsonWorkload -InputData $inputData | ConvertTo-Json  -Depth 10 | out-file $exportJson
+    } 
+ 
     if ($VCFBringup) {
         Write-Logger "Starting VCF Deployment Bringup ..." 
          
@@ -554,40 +449,12 @@ if ($GenerateJson -or $VCFBringup) {
                 Start-Sleep 30
             }
         }
- 
-        # Convert password to secure string and create PSCredential
-        $esxPasswd = ConvertTo-SecureString -String $inputData.VirtualDeployment.Esx.Password -AsPlainText -Force
-        $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
-
-        # Define the server name
-        $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
-
-        # Start the job to run Get-vSANHcl with necessary parameters
-        $job = Start-Job -ScriptBlock { 
-            param (
-                [string]$serverName, 
-                [Management.Automation.PSCredential]$cred
-            )
-            Import-Module -Name ./Utility.psm1
-            return Get-vSANHcl -Server $serverName -Credential $cred 
-        } -ArgumentList $serverName, $cred
-
-        # Wait for the job to complete
-        Wait-Job -Job $job
-
-        # Get the result
-        $result = Receive-Job -Job $job
-
-        # Output result and clean up
-        Write-Output "Job result: $result"
-        Remove-Job -Job $job
-
-
+  
         Start-Sleep 60 
-        Invoke-BringUp -HclFile $inputdata.vSan.HclFile `
+        Invoke-BringUp -InputData $inputdata  `
             -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
             -AdminPassword $(ConvertTo-SecureString -String $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force) `
-            -Json $inputJson   
+            -Path $path
     }
 
 }
