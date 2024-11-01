@@ -1,3 +1,23 @@
+<#
+
+Not supported
+
+
+#row Proxy Server Configuration                              No
+# 22 Proxy Server                                            n/a
+# 23 Proxy Port                                              n/a
+# 24 Proxy Username                                          n/a
+# 25 Proxy Password                                          n/a
+# 26 Proxy Transfer Protocol                                 HTTP
+# 27 HTTPS Proxy Certificate (PEM Encoded)…                  n/a
+ 
+# row Secondary vSphere Distributed Switch (Optional)            Value
+# 6   Secondary vSphere Distributed Switch - Name *              n/a
+# 7   Secondary vSphere Distributed Switch - Transport Zone Type n/a
+# 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
+# 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
+#>
+
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Medium", DefaultParameterSetName = 'Psd1File')]
 [CmdletBinding(DefaultParameterSetName = 'UsernamePassword')] 
 param(
@@ -64,34 +84,8 @@ if ($UseSSH) {
     install-module -Name "Posh-SSH"  -Scope CurrentUser
 }
 Import-Module -Name ./Utility.psm1
-
-#if ([string]::IsNullOrEmpty( $VAppName) ) {
-#$random_string = -join ((65..90) + (97..122) | Get-Random -Count 8 | % { [char]$_ })
-# $VAppName = "Nested-VCF-Lab-$random_string"
-#}
  
-
  
-# row   vSphere Resource Pools                                                                                                                            Value
-#$r[24] Resource Pool SDDC Management                                                                                                                     sfo-m01-cluster-001-management-001
-#$r[25] Resource Pool User Edge                                                                                                                           sfo-m01-cluster-001-compute-002
-#$r[26] Resource Pool User VM                                                                                                                             sfo-m01-cluster-001-compute-003
-
-
-#row Proxy Server Configuration                              No
-# 22 Proxy Server                                            n/a
-# 23 Proxy Port                                              n/a
-# 24 Proxy Username                                          n/a
-# 25 Proxy Password                                          n/a
-# 26 Proxy Transfer Protocol                                 HTTP
-# 27 HTTPS Proxy Certificate (PEM Encoded)…                  n/a
- 
-# row Secondary vSphere Distributed Switch (Optional)            Value
-# 6   Secondary vSphere Distributed Switch - Name *              n/a
-# 7   Secondary vSphere Distributed Switch - Transport Zone Type n/a
-# 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
-# 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
-
  
 
 # VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
@@ -136,10 +130,7 @@ if ($ConfigurationFile) {
     }
 }
 
-$VMNetmask = ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet
-
 # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
-
 if ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.1") {
     $VCFVersion = "5.2.1"
 }
@@ -324,7 +315,7 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx)))
 
 if (-not $NoNestedMgmtEsx  ) {  
     Write-Logger "Deploying $($inputData.VirtualDeployment.Esx.Hosts.Count) Managament ESX hosts ..."
-    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
+    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA  -VMHost $vmhost -Datastore  $Datastore 
 }
 
 if ( $NestedWldEsx  ) {  
@@ -333,7 +324,7 @@ if ( $NestedWldEsx  ) {
         exit
     }
     Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
-    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA
+    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA -VMHost $vmhost -Datastore  $Datastore 
     $VCFWorkloadDomainUIJSONFile = "$VAppName-WorkloadDomainUi.json"
     $VCFWorkloadDomainAPIJSONFile = "$VAppName-WorkloadDomainApi.json"
     Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
@@ -370,39 +361,7 @@ if ( $NestedWldEsx  ) {
 
 }
 if (-not $NoCloudBuilderDeploy) {
-    $answer = ""
-    $CloudbuilderVM = Get-VM -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
-
-    $redeploy, $answer = Test-VMForReImport -Vm $CloudbuilderVM -Answer $answer
-
-    if ( $redeploy) { 
-            
-        $ovfconfig = Get-OvfConfiguration $inputData.VirtualDeployment.CloudBuilder.Ova
-
-        $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
-        $ovfconfig.NetworkMapping.$networkMapLabel.value = $inputData.VirtualDeployment.Cloudbuilder.PortGroup
-        $ovfconfig.common.guestinfo.hostname.value = $inputData.VirtualDeployment.Cloudbuilder.Hostname
-        $ovfconfig.common.guestinfo.ip0.value = $inputData.VirtualDeployment.Cloudbuilder.Ip
-        $ovfconfig.common.guestinfo.netmask0.value = $VMNetmask
-        $ovfconfig.common.guestinfo.gateway.value = $inputData.NetworkSpecs.ManagementNetwork.gateway
-        $ovfconfig.common.guestinfo.DNS.value = $inputData.NetworkSpecs.DnsSpec.NameServers
-        $ovfconfig.common.guestinfo.domain.value = $inputData.NetworkSpecs.DnsSpec.Domain
-        $ovfconfig.common.guestinfo.searchpath.value = $inputData.NetworkSpecs.DnsSpec.Domain
-        $ovfconfig.common.guestinfo.ntp.value = $inputdata.NetworkSpecs.NtpServers -join ","
-        $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = $CloudbuilderAdminUsername
-        $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.AdminPassword
-        $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $inputData.VirtualDeployment.Cloudbuilder.RootPassword
-
-        Write-Logger "Deploying Cloud Builder VM $($inputData.VirtualDeployment.Cloudbuilder.VMName) ..."
-        $CloudbuilderVM = Import-VApp -Source $inputData.VirtualDeployment.CloudBuilder.Ova -OvfConfiguration $ovfconfig -Name $inputData.VirtualDeployment.Cloudbuilder.VMName -Location $importLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
-        if (-not $CloudbuilderVM) {
-            Write-Logger -ForegroundColor red  -message "Deploy of $($inputData.VirtualDeployment.Cloudbuilder.VMName) failed."
-            @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
-            exit
-        }
-        Write-Logger "Powering On $($inputData.VirtualDeployment.Cloudbuilder.VMName) ..."
-        $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
-    }
+    Add-CloudBuilder  -InputData $InputData -ImportLocation $ImportLocation -VMHost $vmhost -Datastore  $Datastore 
 }
  
 

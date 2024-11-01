@@ -95,23 +95,34 @@ function Test-VMForReImport {
     }    
 }
 
-
 <#
 .SYNOPSIS
 	Logs a message to both the console and a log file with a timestamp.
 
 .DESCRIPTION
-	This function writes a formatted log message with a timestamp to the console and appends the same message to a log file.
-	The console message color can be customized by specifying the `$color` parameter.
+	This function writes a formatted log message with a timestamp to the console and appends 
+	the same message to a log file if `$script:verboseLogFile` is set. It supports multi-line messages
+	and allows controlling the console output color and newline behavior.
 
-.PARAMETER message
-	The message to be logged. This parameter is mandatory.
+.PARAMETER Message
+	The message to be logged. This parameter is mandatory and supports null or empty strings.
 
-.PARAMETER color
-	Optional. The color of the message in the console. Default is "green".
+.PARAMETER ForegroundColor
+	Optional. Specifies the color for the console message. Default is "green".
+
+.PARAMETER NoNewline
+	Optional switch that prevents a newline after the message in the console.
 
 .NOTES
-	This function requires the `$verboseLogFile` variable to be set with the log file path.
+	- Assumes `$script:verboseLogFile` is set to a valid file path for file logging.
+	- Uses `$script:tempLogMessage` as a temporary buffer for multi-line logging.
+
+.EXAMPLE
+	# Log a message in green with a newline
+	Write-Logger -Message "Deployment started."
+
+	# Log a message without a newline
+	Write-Logger -Message "Continuing deployment..." -NoNewline
 #>
 
 Function Write-Logger {
@@ -128,26 +139,26 @@ Function Write-Logger {
         $NoNewline
     )
     
-
     # Generate a timestamp for log entries
     $timeStamp = Get-Date -Format "MM-dd-yyyy_hh:mm:ss" 
 
+    # If a log file path is set, log to both file and console
     if ($null -ne $script:verboseLogFile ) {
-        if ( $NoNewline) {
+        if ($NoNewline) {
+            # Append to the temporary message buffer for multi-line logging
             if ($script:tempLogMessage.Length -eq 0) {
                 $null = $script:tempLogMessage.Append("[$timeStamp] ")
-            
             }
             $null = $script:tempLogMessage.Append($Message)
         }
         else {
-            if ( $script:tempLogMessage.Length -gt 0) {
+            # Complete message in buffer or log new message to file and console
+            if ($script:tempLogMessage.Length -gt 0) {
                 $null = $script:tempLogMessage.Append($Message)
                 $script:tempLogMessage.ToString() | Out-File -Append -LiteralPath $script:verboseLogFile
                 Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
-                Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object($script:tempLogMessage.ToString())
+                Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object ($script:tempLogMessage.ToString())
                 $null = $script:tempLogMessage.Clear()
-
             }
             else {
                 # Format the log message with the timestamp and append to the log file
@@ -158,26 +169,46 @@ Function Write-Logger {
         }
     }
     else {
-        # Write the timestamp and message to the console
+        # Write the timestamp and message to the console if no log file is set
         Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
         Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object $Message
     }
 }
 
+<#
+.SYNOPSIS
+	Initializes the logging process by setting up a new log file for VMware Cloud Foundation deployment.
 
+.DESCRIPTION
+	This function sets the path for the log file and initializes a temporary log message buffer. 
+	It is used to start logging deployment activities for VMware Cloud Foundation, creating a 
+	new log file at the specified location with an initial message indicating the start of a new deployment.
+
+.PARAMETER Path
+	The directory path where the log file will be created.
+
+.NOTES
+	Requires `Write-Logger` to handle actual logging entries.
+	Assumes `$script:tempLogMessage` and `$script:verboseLogFile` are global script-level variables.
+#>
 function Start-Logger {
     param(
         [string]
         $Path
     )
+
+    # Set the log file path as a script-scoped variable
     $script:verboseLogFile = Join-Path -Path $Path -ChildPath "deployment.log"
 
+    # Initialize the log message buffer if not already created
     if ($null -eq $script:tempLogMessage) {
-    
         $script:tempLogMessage = [System.Text.StringBuilder]::new()
     }
-    Write-Logger "---- Start New VMware Cloud Fondation Virtual Deployment ----"
+
+    # Log the start of a new deployment
+    Write-Logger "---- Start New VMware Cloud Foundation Virtual Deployment ----"
 }
+
 
 <#
 .SYNOPSIS
@@ -1003,29 +1034,41 @@ function Import-ExcelVCFData {
         }
     }
 }
- 
-<#
+
+
+ <#
 .SYNOPSIS
 	Submits a VCF bringup request and manages HCL file transfers to a VMware Cloud Builder.
 
 .DESCRIPTION
-	This function handles the bringup process for VMware Cloud Foundation (VCF) by submitting a JSON payload 
-	to a specified Cloud Builder's API endpoint. If an HCL file is provided, the function transfers it 
-	to the Cloud Builder via SCP or VM guest file copy, depending on the deployment environment.
+	This function initiates the VMware Cloud Foundation (VCF) bringup process by submitting a JSON payload 
+	to the API endpoint of a specified Cloud Builder. If an HCL file is provided, it transfers the file 
+	to the Cloud Builder either via SCP or VM guest file copy, depending on the deployment environment 
+	and availability of SSH.
+
+.PARAMETER InputData
+	A structured dictionary containing deployment configuration details. Includes paths, credentials, 
+	and network information necessary for bringup and HCL file handling.
 
 .PARAMETER CloudbuilderFqdn
 	The FQDN of the VMware Cloud Builder server where the bringup process will be initiated.
 
 .PARAMETER AdminPassword
-	The administrator password as a SecureString. Used to create a PSCredential for authentication with Cloud Builder.
- 
+	The administrator password, provided as a SecureString. Used to create a PSCredential for 
+	authentication with Cloud Builder.
+
+.PARAMETER Path
+	The path to the local directory containing the HCL file for transfer to Cloud Builder.
+
 .EXAMPLE
-	# Invoke bringup with HCL file and JSON payload
-	Invoke-BringUp -HclFile "C:\path\to\hcl.json" -CloudbuilderFqdn "cloudbuilder.example.com" -AdminPassword (ConvertTo-SecureString "password" -AsPlainText -Force) -Json $jsonPayload
+	# Initiate bringup with HCL file and JSON payload
+	Invoke-BringUp -InputData $deploymentData -CloudbuilderFqdn "cloudbuilder.example.com" `
+                   -AdminPassword (ConvertTo-SecureString "password" -AsPlainText -Force) -Path "C:\path\to\hcl"
 
 .NOTES
-	This function uses both SCP (for SSH-based environments) and VM guest file copy based on availability.
-	Ensure the ImportExcel module and any necessary modules (e.g., Posh-SSH) are installed for proper functionality.
+	- This function supports SCP for SSH-based environments and VM guest file copy for vSphere environments.
+	- Requires `Write-Logger` for logging and `Get-JsonWorkload` to generate JSON payloads.
+	- Ensure necessary modules (e.g., Posh-SSH, VMware PowerCLI) are installed and imported for complete functionality.
 #>
 function Invoke-BringUp {
     param(
@@ -1134,7 +1177,11 @@ function Add-VirtualEsx {
         $Esx,
 
         [switch]
-        $VsanEsa
+        $VsanEsa,
+
+        $VMHost,
+        
+        $Datastore 
     )
 
     # Initialize answer for re-import prompts
@@ -1176,7 +1223,7 @@ function Add-VirtualEsx {
 
         # Deploy the ESXi VM using the configured OVF template
         Write-Logger "Deploying Nested ESXi VM $VMName ..."
-        $vm = Import-VApp -Source $Esx.Ova -OvfConfiguration $ovfconfig -Name $VMName -Location $ImportLocation -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin 
+        $vm = Import-VApp -Source $Esx.Ova -OvfConfiguration $ovfconfig -Name $VMName -Location $ImportLocation -VMHost $VMHost -Datastore $Datastore -DiskStorageFormat thin 
     
         # Check if VM deployment failed
         if (-not $vm) {
@@ -1501,10 +1548,34 @@ function Get-vSANHcl {
 }
 
 
+<#
+.SYNOPSIS
+	Extracts the vSAN HCL from the first ESXi host in a given deployment configuration.
+
+.DESCRIPTION
+	This function generates a vSAN HCL file by connecting to the first ESXi host in the input data, 
+	authenticating with provided credentials, and running `Get-vSANHcl` in a background job. The 
+	resulting file path is saved to the `$InputData` object for future reference.
+
+.PARAMETER inputData
+	An ordered hashtable containing deployment configuration details, such as ESXi hosts, DNS, and passwords.
+
+.PARAMETER Path
+	The path where the vSAN HCL file should be saved.
+
+.EXAMPLE
+	# Run Get-FirstEsxHcl with deployment data and path
+	Get-FirstEsxHcl -inputData $deploymentData -Path "/path/to/save"
+
+.NOTES
+	- Requires the `Utility.psm1` module with the `Get-vSANHcl` function.
+	- Assumes the user has access permissions for vSAN HCL extraction.
+#>
 function Get-FirstEsxHcl {
     param (
         [System.Management.Automation.OrderedHashtable]
         $inputData,
+
         [string]
         $Path
     )
@@ -1513,38 +1584,71 @@ function Get-FirstEsxHcl {
     $esxPasswd = ConvertTo-SecureString -String $inputData.VirtualDeployment.Esx.Password -AsPlainText -Force
     $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
 
-    # Define the server name
+    # Define the server name for the first ESXi host
     $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
 
     Write-Logger "Extract the vSAN HCL from '$serverName' ..."
-    # Start the job to run Get-vSANHcl with necessary parameters
+    
+    # Start a background job to run Get-vSANHcl with provided parameters
     $job = Start-Job -ScriptBlock { 
         param (
             [string]$serverName, 
             [Management.Automation.PSCredential]$cred,
             [string]$Path
         )
+        # Import the Utility module that contains Get-vSANHcl
         Import-Module -Name ./Utility.psm1
+
+        # Run Get-vSANHcl and return the output path
         return Get-vSANHcl -Server $serverName -Credential $cred -Path $Path
     } -ArgumentList $serverName, $cred, $Path
 
-    # Wait for the job to complete
+    # Wait for the job to complete and retrieve the result
     Wait-Job -Job $job
-   
-    # Get the result
     $result = Receive-Job -Job $job
 
+    # Log and store the result path in the inputData object
     Write-Logger "vSAN HCL file saved as '$result' "
-
     $InputData.vSan.HclFile = "/home/admin/$result"
 
-    # Output result and clean up
-    #Write-Output "Job result: $($InputData.vSan.HclFile)"
+    # Clean up the background job
     Remove-Job -Job $job
-    
 }
 
 
+
+<#
+.SYNOPSIS
+	Displays a summary of the deployment configuration for various VMware Cloud Foundation (VCF) components.
+
+.DESCRIPTION
+	This function displays key configuration details for VCF components, including vCenter Server, Cloud Builder,
+	vESXi configurations for management and workload domains, and related networking information. 
+	Each section is controlled by switch parameters to conditionally display relevant details.
+
+.PARAMETER VCFBringup
+	If specified, displays information about the vCenter Server deployment target configuration.
+
+.PARAMETER NoCloudBuilderDeploy
+	Prevents the display of Cloud Builder configuration if specified.
+
+.PARAMETER NoNestedMgmtEsx
+	Prevents the display of the vESXi management domain configuration if specified.
+
+.PARAMETER NestedWldEsx
+	Displays the configuration details for vESXi workload domain.
+
+.PARAMETER InputData
+	An ordered hashtable containing deployment data, including VM details, networking, and storage configuration.
+
+.EXAMPLE
+	# Display summary including VCF Bringup and Nested Management ESXi configuration
+	Show-Summary -VCFBringup -NoCloudBuilderDeploy -NestedWldEsx -InputData $deploymentData
+
+.NOTES
+	Requires the `Write-Logger` function to log information with specified colors.
+	Assumes that `$InputData` is structured according to the required keys for VCF and ESXi information.
+#>
 
 function Show-Summary {
     param(
@@ -1563,6 +1667,8 @@ function Show-Summary {
         [System.Management.Automation.OrderedHashtable]
         $InputData
     )
+
+    # Display vCenter Server deployment target configuration if VCFBringup switch is used
     if ($VCFBringup) {
         Write-Host
         Write-Logger -ForegroundColor Yellow "---- vCenter Server Deployment Target Configuration ----"
@@ -1585,11 +1691,13 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.VMFolder
     }
     
+    # Display vApp name if Cloud Builder or Management ESXi is being deployed or if Nested WLD ESXi is enabled
     if ((-not $NoCloudBuilderDeploy) -or (-not $NoNestedMgmtEsx) -or $NestedWldEsx) {
         Write-Logger -NoNewline -ForegroundColor Green -Message "VM vApp: "
         Write-Logger -ForegroundColor White -Message $VAppName
     }
     
+    # Display Cloud Builder configuration if NoCloudBuilderDeploy is not specified
     if (-not $NoCloudBuilderDeploy) {
         Write-Host
         Write-Logger -ForegroundColor Yellow "---- Cloud Builder Configuration ----"
@@ -1603,6 +1711,7 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Cloudbuilder.PortGroup
     }
 
+    # Display nested ESXi management domain configuration if NoNestedMgmtEsx is not specified
     if (-not $NoNestedMgmtEsx) {
         Write-Host
         Write-Logger -ForegroundColor Yellow "---- vESXi Configuration for VCF Management Domain ----"
@@ -1616,10 +1725,12 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.vMemory) GB"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Boot Disk VMDK: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.BootDisk) GB"
+
+        # Display either ESA or caching/capacity disk information
         if ($InputData.vSan.ESA) {
-            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 1 VMDK: "
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Object 1 VMDK: "
             Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.ESADisk1) GB"
-            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 2 VMDK: "
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Object 2 VMDK: "
             Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.ESADisk2) GB"
         }
         else {
@@ -1632,8 +1743,8 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.VMNetwork1)"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.VMNetwork2)"
-        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask "
-        Write-Logger -ForegroundColor White -Message $VMNetmask
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask: "
+        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
         Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
         Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
         Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
@@ -1644,24 +1755,26 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Syslog 
     }
 
-
+    # Display nested ESXi workload domain configuration if NestedWldEsx is specified
     if ($NestedWldEsx) {
         Write-Host
         Write-Logger -ForegroundColor Yellow "---- vESXi Configuration for VCF Workload Domain ----"
         Write-Logger -NoNewline -ForegroundColor Green -Message "# of Nested ESXi VMs: "
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.WldEsx.Hosts.count
         Write-Logger -NoNewline -ForegroundColor Green -Message "IP Address(s): "
-        Write-Logger -ForegroundColor White ($InputData.VirtualDeployment.WldEsx.Hosts.Values.Ip -join ', ')
+        Write-Logger -ForegroundColor White -Message ($InputData.VirtualDeployment.WldEsx.Hosts.Values.Ip -join ', ')
         Write-Logger -NoNewline -ForegroundColor Green -Message "vCPU: "
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.WldEsx.vCPU
         Write-Logger -NoNewline -ForegroundColor Green -Message "vMEM: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.vMemory) GB"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Boot Disk VMDK: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.BootDisk) GB"
+
+        # Display either ESA or caching/capacity disk information for the workload domain
         if ($InputData.vSan.ESA) {
-            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 1 VMDK: "
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Object 1 VMDK: "
             Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.ESADisk1) GB"
-            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Objeck 2 VMDK: "
+            Write-Logger -NoNewline -ForegroundColor Green -Message "Disk Object 2 VMDK: "
             Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.ESADisk2) GB"
         }
         else {
@@ -1674,8 +1787,8 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.VMNetwork1)"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.VMNetwork2)"
-        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask "
-        Write-Logger -ForegroundColor White -Message $VMNetmask
+        Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask: "
+        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
         Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
         Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
         Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
@@ -1686,6 +1799,58 @@ function Show-Summary {
         Write-Logger -ForegroundColor White -Message $InputData.VirtualDeployment.Syslog
     }
 }
+
+function Add-CloudBuilder { 
+    param( 
+        [VMware.VimAutomation.ViCore.Impl.V1.Inventory.VAppImpl]
+        $ImportLocation,
+
+        [System.Management.Automation.OrderedHashtable]
+        $InputData,
+
+       
+        $VMHost,
+        
+        $Datastore 
+    )
+
+    $answer = ""
+    $CloudbuilderVM = Get-VM -Name $InputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
+
+    $redeploy, $answer = Test-VMForReImport -Vm $CloudbuilderVM -Answer $answer
+
+    if ( $redeploy) { 
+            
+        $ovfconfig = Get-OvfConfiguration $InputData.VirtualDeployment.CloudBuilder.Ova
+
+        $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
+        $ovfconfig.NetworkMapping.$networkMapLabel.value = $InputData.VirtualDeployment.Cloudbuilder.PortGroup
+        $ovfconfig.common.guestinfo.hostname.value = $InputData.VirtualDeployment.Cloudbuilder.Hostname
+        $ovfconfig.common.guestinfo.ip0.value = $InputData.VirtualDeployment.Cloudbuilder.Ip
+        $ovfconfig.common.guestinfo.netmask0.value = (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
+        $ovfconfig.common.guestinfo.gateway.value = $InputData.NetworkSpecs.ManagementNetwork.gateway
+        $ovfconfig.common.guestinfo.DNS.value = $InputData.NetworkSpecs.DnsSpec.NameServers
+        $ovfconfig.common.guestinfo.domain.value = $InputData.NetworkSpecs.DnsSpec.Domain
+        $ovfconfig.common.guestinfo.searchpath.value = $InputData.NetworkSpecs.DnsSpec.Domain
+        $ovfconfig.common.guestinfo.ntp.value = $InputData.NetworkSpecs.NtpServers -join ","
+        $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = 'Admin'
+        $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.AdminPassword
+        $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.RootPassword
+
+        Write-Logger "Deploying Cloud Builder VM $($InputData.VirtualDeployment.Cloudbuilder.VMName) ..."
+        $CloudbuilderVM = Import-VApp -Source $InputData.VirtualDeployment.CloudBuilder.Ova -OvfConfiguration $ovfconfig -Name $InputData.VirtualDeployment.Cloudbuilder.VMName -Location $importLocation -VMHost $VMHost -Datastore $Datastore -DiskStorageFormat thin 
+        if (-not $CloudbuilderVM) {
+            Write-Logger -ForegroundColor red  -message "Deploy of $($InputData.VirtualDeployment.Cloudbuilder.VMName) failed."
+            @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
+            exit
+        }
+        Write-Logger "Powering On $($InputData.VirtualDeployment.Cloudbuilder.VMName) ..."
+        $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
+    }
+}
+
+
+
 # Export the specified functions from this module to make them available for use when the module is imported
 Export-ModuleMember -Function Test-VMForReImport, Write-Logger, Get-TransportZone, ConvertTo-Netmask, Convert-HashtableToPsd1String, Get-JsonWorkload
-Export-ModuleMember -Function Import-ExcelVCFData, Invoke-BringUp, Add-VirtualEsx, Get-VSanHcl, Show-Summary, Start-Logger, Get-FirstEsxHcl
+Export-ModuleMember -Function Import-ExcelVCFData, Invoke-BringUp, Add-VirtualEsx, Get-VSanHcl, Show-Summary, Start-Logger, Get-FirstEsxHcl, Add-CloudBuilder
