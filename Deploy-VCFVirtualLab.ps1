@@ -63,19 +63,19 @@
 .EXAMPLE
     # Example with VIPassword - Deploy VCF, export configuration, and initiate bringup
     $password = ConvertTo-SecureString "YourPassword" -AsPlainText -Force
-    .\Deploy-VCF.ps1 -VIUsername "administrator@vsphere.local" -VIPassword $password -ConfigurationFile "C:\Configs\VCFConfig.psd1" `
+    .\Deploy-VCFVirtualLab.ps1 -VIUsername "administrator@vsphere.local" -VIPassword $password -ConfigurationFile "C:\Configs\VCFConfig.psd1" `
         -VCFBringup -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -GenerateJsonFile
 
 .EXAMPLE
     # Example with VIPassword via pipeline
     ConvertTo-SecureString "YourPassword" -AsPlainText -Force |
-     .\Deploy-VCF.ps1 -VIUsername "administrator@vsphere.local" -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
+     .\Deploy-VCFVirtualLab.ps1 -VIUsername "administrator@vsphere.local" -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
         -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -NoNestedMgmtEsx
 
 .EXAMPLE
     # Example with VICredential - Deploy VCF and skip bringup
     $credential = New-Object System.Management.Automation.PSCredential("administrator@vsphere.local", (ConvertTo-SecureString "YourPassword" -AsPlainText -Force))
-    .\Deploy-VCF.ps1 -VICredential $credential -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
+    .\Deploy-VCFVirtualLab.ps1 -VICredential $credential -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
         -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -NoVapp -NoCloudBuilderDeploy
 
 .NOTES
