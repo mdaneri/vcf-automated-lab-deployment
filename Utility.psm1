@@ -154,7 +154,6 @@ function Write-Logger {
             if ($script:tempLogMessage.Length -gt 0) {
                 $null = $script:tempLogMessage.Append($Message)
                 $script:tempLogMessage.ToString() | Out-File -Append -LiteralPath $script:verboseLogFile
-                Write-Host -NoNewline -ForegroundColor White -Object "[$timestamp] "
                 Write-Host -NoNewline:$NoNewline -ForegroundColor $ForegroundColor -Object ($script:tempLogMessage.ToString())
                 $null = $script:tempLogMessage.Clear()
             }
@@ -194,17 +193,18 @@ function Start-Logger {
         [string]
         $Path
     )
-
+    # Check if folder exist
+    if (!(Test-Path -Path $Path -PathType Container)) {
+        exit
+    }
     # Set the log file path as a script-scoped variable
     $script:verboseLogFile = Join-Path -Path $Path -ChildPath "deployment.log"
 
-    # Initialize the log message buffer if not already created
-    if ($null -eq $script:tempLogMessage) {
-        $script:tempLogMessage = [System.Text.StringBuilder]::new()
-    }
+    # Initialize the log message buffer   
+    $script:tempLogMessage = [System.Text.StringBuilder]::new()    
 
     # Log the start of a new deployment
-    Write-Logger "---- Start New VMware Cloud Foundation Virtual Deployment ----"
+    Write-Logger -ForegroundColor Yellow -Message "---- Start New VMware Cloud Foundation Virtual Deployment ----"
 }
 
 
@@ -1318,7 +1318,7 @@ function Add-VirtualEsx {
 
         # Power on the VM after configuration
         Write-Logger "Powering On $VMName ..."
-        $vm | Start-VM -RunAsync | Out-Null
+        $vm | Start-VM  -ErrorAction Stop | Out-Null
     }
 }
 
@@ -1855,7 +1855,7 @@ function Add-CloudBuilder {
         $ovfconfig.common.guestinfo.domain.value = $InputData.NetworkSpecs.DnsSpec.Domain
         $ovfconfig.common.guestinfo.searchpath.value = $InputData.NetworkSpecs.DnsSpec.Domain
         $ovfconfig.common.guestinfo.ntp.value = $InputData.NetworkSpecs.NtpServers -join ","
-        $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = 'Admin'
+        $ovfconfig.common.guestinfo.ADMIN_USERNAME.value = 'admin'
         $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.AdminPassword
         $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.RootPassword
 
@@ -1872,7 +1872,7 @@ function Add-CloudBuilder {
 
         # Power on the Cloud Builder VM
         Write-Logger "Powering On $($InputData.VirtualDeployment.Cloudbuilder.VMName) ..."
-        $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
+        $CloudbuilderVM | Start-Vm  -ErrorAction Stop | Out-Null
     }
 }
 

@@ -177,7 +177,7 @@ $dstNotificationScript = "/root/vcf-bringup-notification.sh"
 
 $StartTime = Get-Date
 
- # Load configuration file (supports .psd1, .xlsx, .json formats)
+# Load configuration file (supports .psd1, .xlsx, .json formats)
 if ($ConfigurationFile) {
     if (Test-Path $ConfigurationFile) {
         switch ( [System.IO.Path]::GetExtension($ConfigurationFile)) {
@@ -257,7 +257,7 @@ if ($PSVersionTable.PSEdition -ne "Core") {
 
 if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) { 
     Write-Host -ForegroundColor Magenta "`nPlease confirm the following configuration will be deployed:`n"
-# Summarize the deployment configuration for user confirmation
+    # Summarize the deployment configuration for user confirmation
     Write-Host -ForegroundColor Yellow "---- VCF Automated Lab Deployment Configuration ---- "
     Write-Host -NoNewline -ForegroundColor Green "VMware Cloud Foundation Version: "
     Write-Host -ForegroundColor White $VCFVersion
@@ -306,21 +306,31 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
         }
     }
 
-    Start-Logger -Path (Join-Path -Path $PWD -ChildPath $exportFileName) 
     
+    # Define the export path based on the current working directory and the export file name
     $path = Join-Path -Path $PWD -ChildPath $exportFileName
-
-    if (!(Test-Path -Path $path)) {
-        New-Item -Path $path -ItemType Directory
-    }
-    if ($GenerateJsonFile) { 
-        Write-Logger "Export the JSON workload to the file '$( Join-Path -Path $path -ChildPath "$exportFileName.json")'."
-    }
      
-    if ($GeneratePsd1File) {
-        Write-Logger "Export the Configuration to the file '$( Join-Path -Path $path -ChildPath "$exportFileName.psd1")'."
+    # Check if the export path directory exists; if not, create it
+    Write-Host "Checking if the export path $path directory exists ..."
+    if (!(Test-Path -Path $path)) {
+        Write-Host "Creating the export path $path ..."
+        New-Item -Path $path -ItemType Directory -ErrorAction Stop | Out-Null
     }
 
+    # Start the logging process and specify the path for log files
+    Start-Logger -Path $path 
+
+    # Log the intent to export the JSON workload file if the option is enabled
+    if ($GenerateJsonFile) { 
+        Write-Logger "Export the JSON workload to the file '$(Join-Path -Path $path -ChildPath "$exportFileName.json")'."
+    }
+ 
+    # Log the intent to export the configuration file in PSD1 format if the option is enabled
+    if ($GeneratePsd1File) {
+        Write-Logger "Export the Configuration to the file '$(Join-Path -Path $path -ChildPath "$exportFileName.psd1")'."
+    }
+
+    # Display a summary of the configuration and deployment options chosen
     Show-Summary -InputData $InputData `
         -VCFBringup:$VCFBringup `
         -NoCloudBuilderDeploy:$NoCloudBuilderDeploy `
