@@ -425,7 +425,10 @@ function Convert-HashtableToPsd1String {
             }
             $arrayOutput += "$currentIndentation)" + [Environment]::NewLine
             $output += $arrayOutput
-        } 
+        }
+        elseif( $value -is [pscredential]) {
+            # Skip pscredential type
+        }
         else {
             throw "Unsupported type '$($value.GetType())' for key '$key'. Only common types, hashtables, and arrays are supported."
         }
