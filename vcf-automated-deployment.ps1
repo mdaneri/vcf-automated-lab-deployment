@@ -325,39 +325,7 @@ if ( $NestedWldEsx  ) {
     }
     Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
     Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA -VMHost $vmhost -Datastore  $Datastore 
-    $VCFWorkloadDomainUIJSONFile = "$VAppName-WorkloadDomainUi.json"
-    $VCFWorkloadDomainAPIJSONFile = "$VAppName-WorkloadDomainApi.json"
-    Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
-    $commissionHostsUI = @()
-    $commissionHostsAPI = @()
-    foreach ($name in $inputData.VirtualDeployment.WldEsx.Hosts.keys) {
-        $hostFQDN = "$name.$($inputData.NetworkSpecs.DnsSpec.Domain)"
-
-        $tmp1 = [ordered] @{
-            "hostfqdn"        = $hostFQDN
-            "username"        = "root"
-            "password"        = $inputData.VirtualDeployment.WldEsx.Password
-            "networkPoolName" = $InputData.Management.PoolName
-            "storageType"     = "VSAN"
-        }
-        $commissionHostsUI += $tmp1
-
-        $tmp2 = [ordered] @{
-            "fqdn"          = $hostFQDN
-            "username"      = "root"
-            "password"      = $inputData.VirtualDeployment.WldEsx.Password
-            "networkPoolId" = "TBD"
-            "storageType"   = "VSAN"
-        }
-        $commissionHostsAPI += $tmp2
-    }
-
-    $vcfCommissionHostConfigUI = @{
-        "hostsSpec" = $commissionHostsUI
-    }
-
-    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
-    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
+    Export-CommissionFile -InputData $InputData -Path $Path -ExportFileName $ExportFileName
 
 }
 if (-not $NoCloudBuilderDeploy) {
@@ -382,8 +350,7 @@ if ($GenerateJsonFile -or $VCFBringup) {
     } 
  
     if ($VCFBringup) {
-        Write-Logger "Starting VCF Deployment Bringup ..." 
-         
+        Write-Logger "Starting VCF Deployment Bringup ..."          
 
         Write-Logger "Waiting for Cloud Builder to be ready ..."
         while (1) {

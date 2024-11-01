@@ -1036,7 +1036,7 @@ function Import-ExcelVCFData {
 }
 
 
- <#
+<#
 .SYNOPSIS
 	Submits a VCF bringup request and manages HCL file transfers to a VMware Cloud Builder.
 
@@ -1091,7 +1091,7 @@ function Invoke-BringUp {
     # Check if an HCL file is provided for transfer
     if ($InputData.vSan.HclFile) {
         $hclFileSource = Join-Path -Path $Path -ChildPath $(split-path $InputData.vSan.HclFile -Leaf)
-        $hclFileDest =  $InputData.vSan.HclFile 
+        $hclFileDest = $InputData.vSan.HclFile 
         # Transfer HCL file via SCP if SSH is available
         if ($UseSSH.isPresent) { 
             Write-Logger "SCP HCL $($hclFileSource) file to $($hclFileDest) ..."
@@ -1807,7 +1807,6 @@ function Add-CloudBuilder {
 
         [System.Management.Automation.OrderedHashtable]
         $InputData,
-
        
         $VMHost,
         
@@ -1850,7 +1849,59 @@ function Add-CloudBuilder {
 }
 
 
+function Export-CommissionFile {
+    param(
+        [System.Management.Automation.OrderedHashtable]
+        $InputData,
+
+        [string]
+        $Path,
+
+        [string]
+        $ExportFileName
+    )
+    $VCFWorkloadDomainUIJSONFile = Join-Path -Path $Path -ChildPath "$ExportFileName-WorkloadDomainUi.json"
+    $VCFWorkloadDomainAPIJSONFile = Join-Path -Path $Path -ChildPath "$ExportFileName-WorkloadDomainApi.json"
+    Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
+    $commissionHostsUI = @()
+    $commissionHostsAPI = @()
+    foreach ($name in $inputData.VirtualDeployment.WldEsx.Hosts.keys) {
+        $hostFQDN = "$name.$($inputData.NetworkSpecs.DnsSpec.Domain)"
+
+        $tmp1 = [ordered] @{
+            "hostfqdn"        = $hostFQDN
+            "username"        = "root"
+            "password"        = $inputData.VirtualDeployment.WldEsx.Password
+            "networkPoolName" = $InputData.Management.PoolName
+            "storageType"     = "VSAN"
+        }
+        $commissionHostsUI += $tmp1
+
+        $tmp2 = [ordered] @{
+            "fqdn"          = $hostFQDN
+            "username"      = "root"
+            "password"      = $inputData.VirtualDeployment.WldEsx.Password
+            "networkPoolId" = "TBD"
+            "storageType"   = "VSAN"
+        }
+        $commissionHostsAPI += $tmp2
+    }
+
+    $vcfCommissionHostConfigUI = @{
+        "hostsSpec" = $commissionHostsUI
+    }
+
+    $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
+    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
+
+}
 
 # Export the specified functions from this module to make them available for use when the module is imported
-Export-ModuleMember -Function Test-VMForReImport, Write-Logger, Get-TransportZone, ConvertTo-Netmask, Convert-HashtableToPsd1String, Get-JsonWorkload
-Export-ModuleMember -Function Import-ExcelVCFData, Invoke-BringUp, Add-VirtualEsx, Get-VSanHcl, Show-Summary, Start-Logger, Get-FirstEsxHcl, Add-CloudBuilder
+Export-ModuleMember -Function Test-VMForReImport, Write-Logger, `
+    Get-TransportZone, ConvertTo-Netmask, `
+    Convert-HashtableToPsd1String, Get-JsonWorkload, `
+    Import-ExcelVCFData, Invoke-BringUp, `
+    Add-VirtualEsx, Get-VSanHcl, `
+    Show-Summary, Start-Logger, `
+    Get-FirstEsxHcl, Add-CloudBuilder, `
+    Export-CommissionFile
