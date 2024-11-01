@@ -31,7 +31,6 @@
 	This function returns a boolean and the answer string, indicating whether the VM was removed
 	and whether to apply the action to subsequent VMs in batch mode.
 #>
-
 function Test-VMForReImport {
     param (
         [Parameter(Mandatory = $true)] 
@@ -124,8 +123,7 @@ function Test-VMForReImport {
 	# Log a message without a newline
 	Write-Logger -Message "Continuing deployment..." -NoNewline
 #>
-
-Function Write-Logger {
+function Write-Logger {
     param(
         [Parameter(Mandatory = $true)]
         [AllowNull()]
@@ -239,7 +237,6 @@ function Start-Logger {
 .NOTES
 	This function returns an array of ordered dictionaries, each representing a transport zone with a name and transport type.
 #>
-
 function Get-TransportZone {
     param(
         [Parameter(Mandatory = $true)]
@@ -309,7 +306,6 @@ function Get-TransportZone {
 .NOTES
 	This function is useful for networking scenarios where the CIDR prefix length needs to be converted into a dotted decimal format.
 #>
-
 function ConvertTo-Netmask {
     param (
         [string]$NetworkCIDR
@@ -368,7 +364,6 @@ function ConvertTo-Netmask {
 	This function supports common data types like strings, integers, booleans, arrays, and nested hashtables.
 	Customizes formatting based on type for readability and .psd1 compatibility.
 #>
-
 function Convert-HashtableToPsd1String {
     param (
         [Parameter(Mandatory)]
@@ -464,7 +459,6 @@ function Convert-HashtableToPsd1String {
 	This function is designed to work with ordered hashtables, ensuring the order of keys is maintained in the output.
 	Useful for generating JSON configurations for infrastructure deployments.
 #>
-
 function Get-JsonWorkload {
     param (
         [System.Management.Automation.OrderedHashtable]
@@ -682,7 +676,6 @@ function Get-JsonWorkload {
 	This function is used to generate host configuration details for each ESXi host, 
 	applicable to virtualized infrastructure deployment scenarios.
 #>
-
 function Get-HostSpec {
     param (
         [System.Management.Automation.OrderedHashtable]
@@ -753,7 +746,6 @@ function Get-HostSpec {
 .NOTES
 	This function relies on the `Import-Excel` cmdlet to read data from the Excel file. Ensure that the ImportExcel PowerShell module is installed.
 #>
-
 function Import-ExcelVCFData {
     param(
         [string]
@@ -1164,7 +1156,6 @@ function Invoke-BringUp {
 	This function supports configuring both traditional vSAN and vSAN ESA disk layouts.
 	Ensure proper permissions are in place to deploy and configure VMs within the specified vApp location.
 #>
-
 function Add-VirtualEsx { 
     param( 
         [VMware.VimAutomation.ViCore.Impl.V1.Inventory.VAppImpl]
@@ -1358,7 +1349,6 @@ function Add-VirtualEsx {
 	Ensure you have an active internet connection for retrieving the latest vSAN HCL timestamp.
 	This function requires PowerCLI and VMware modules.
 #>
-
 function Get-vSANHcl {
     param (
         [string]$Server,
@@ -1649,7 +1639,6 @@ function Get-FirstEsxHcl {
 	Requires the `Write-Logger` function to log information with specified colors.
 	Assumes that `$InputData` is structured according to the required keys for VCF and ESXi information.
 #>
-
 function Show-Summary {
     param(
         [switch]
@@ -1800,6 +1789,37 @@ function Show-Summary {
     }
 }
 
+<#
+.SYNOPSIS
+	Deploys a VMware Cloud Builder VM by importing an OVF template and configuring network settings.
+
+.DESCRIPTION
+	This function checks if a Cloud Builder VM already exists in the specified location. If it does, 
+	the user is prompted to redeploy it. If redeployment is required, the function configures the OVF 
+	configuration for the Cloud Builder with network and authentication settings, deploys the VM, and powers it on.
+
+.PARAMETER ImportLocation
+	The vApp location within the vCenter inventory where the Cloud Builder VM will be imported.
+
+.PARAMETER InputData
+	An ordered hashtable containing deployment configurations, including Cloud Builder VM details, 
+	network specs, and credentials.
+
+.PARAMETER VMHost
+	The vSphere host on which the Cloud Builder VM will be deployed.
+
+.PARAMETER Datastore
+	The datastore where the Cloud Builder VM's disks will be stored.
+
+.EXAMPLE
+	# Deploy Cloud Builder with specified parameters
+	Add-CloudBuilder -ImportLocation $vAppLocation -InputData $deploymentData `
+	                 -VMHost $host -Datastore $datastore
+
+.NOTES
+	- Requires `Test-VMForReImport` to check for an existing VM and `Write-Logger` for logging.
+	- Assumes `$InputData` is properly structured with necessary keys for Cloud Builder details.
+#>
 function Add-CloudBuilder { 
     param( 
         [VMware.VimAutomation.ViCore.Impl.V1.Inventory.VAppImpl]
@@ -1813,15 +1833,18 @@ function Add-CloudBuilder {
         $Datastore 
     )
 
+    # Initialize response for redeployment prompt
     $answer = ""
+    
+    # Check for an existing Cloud Builder VM
     $CloudbuilderVM = Get-VM -Name $InputData.VirtualDeployment.Cloudbuilder.VMName -Server $viConnection -Location $importLocation -ErrorAction SilentlyContinue
-
     $redeploy, $answer = Test-VMForReImport -Vm $CloudbuilderVM -Answer $answer
 
-    if ( $redeploy) { 
-            
+    if ($redeploy) { 
+        # Configure OVF settings for Cloud Builder deployment
         $ovfconfig = Get-OvfConfiguration $InputData.VirtualDeployment.CloudBuilder.Ova
 
+        # Map network and set other OVF properties
         $networkMapLabel = ($ovfconfig.ToHashTable().keys | Where-Object { $_ -Match "NetworkMapping" }).replace("NetworkMapping.", "").replace("-", "_").replace(" ", "_")
         $ovfconfig.NetworkMapping.$networkMapLabel.value = $InputData.VirtualDeployment.Cloudbuilder.PortGroup
         $ovfconfig.common.guestinfo.hostname.value = $InputData.VirtualDeployment.Cloudbuilder.Hostname
@@ -1836,19 +1859,53 @@ function Add-CloudBuilder {
         $ovfconfig.common.guestinfo.ADMIN_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.AdminPassword
         $ovfconfig.common.guestinfo.ROOT_PASSWORD.value = $InputData.VirtualDeployment.Cloudbuilder.RootPassword
 
+        # Log and deploy the Cloud Builder VM
         Write-Logger "Deploying Cloud Builder VM $($InputData.VirtualDeployment.Cloudbuilder.VMName) ..."
         $CloudbuilderVM = Import-VApp -Source $InputData.VirtualDeployment.CloudBuilder.Ova -OvfConfiguration $ovfconfig -Name $InputData.VirtualDeployment.Cloudbuilder.VMName -Location $importLocation -VMHost $VMHost -Datastore $Datastore -DiskStorageFormat thin 
+
         if (-not $CloudbuilderVM) {
-            Write-Logger -ForegroundColor red  -message "Deploy of $($InputData.VirtualDeployment.Cloudbuilder.VMName) failed."
+            # Log and exit on deployment failure
+            Write-Logger -ForegroundColor Red -message "Deploy of $($InputData.VirtualDeployment.Cloudbuilder.VMName) failed."
             @{date = (Get-Date); failure = $true; vapp = $VApp; component = 'CloudBuilder' } | ConvertTo-Json | Out-File state.json
             exit
         }
+
+        # Power on the Cloud Builder VM
         Write-Logger "Powering On $($InputData.VirtualDeployment.Cloudbuilder.VMName) ..."
         $CloudbuilderVM | Start-Vm -RunAsync | Out-Null
     }
 }
 
 
+<#
+.SYNOPSIS
+	Generates and exports host commission files for the VCF Workload Domain to be used by SDDC Manager UI and API.
+
+.DESCRIPTION
+	This function creates JSON files containing host information for commissioning a VMware Cloud Foundation (VCF) 
+	Workload Domain in the SDDC Manager. It exports two JSON files: one formatted for the SDDC Manager UI and 
+	the other for API usage. The files include host details such as FQDN, credentials, network pool, and storage type.
+
+.PARAMETER InputData
+	An ordered hashtable containing configuration details for the workload domain, including network specs, 
+	DNS settings, and credentials.
+
+.PARAMETER Path
+	The directory where the JSON commission files will be saved.
+
+.PARAMETER ExportFileName
+	The base name for the exported JSON files. Each file will have "-WorkloadDomainUi.json" or 
+	"-WorkloadDomainApi.json" appended to the filename.
+
+.EXAMPLE
+	# Generate commission files with the specified data and export location
+	Export-CommissionFile -InputData $deploymentData -Path "C:\path\to\export" -ExportFileName "VCFCommission"
+
+.NOTES
+	- Requires `Write-Logger` for logging messages.
+	- Assumes `$InputData` structure contains all necessary keys for hosts, DNS domain, and network pool.
+	- The `networkPoolId` value in the API JSON file is set to "TBD" and may need updating after export.
+#>
 function Export-CommissionFile {
     param(
         [System.Management.Automation.OrderedHashtable]
@@ -1860,14 +1917,26 @@ function Export-CommissionFile {
         [string]
         $ExportFileName
     )
+
+    # Define paths for the UI and API JSON files based on the provided export file name
     $VCFWorkloadDomainUIJSONFile = Join-Path -Path $Path -ChildPath "$ExportFileName-WorkloadDomainUi.json"
     $VCFWorkloadDomainAPIJSONFile = Join-Path -Path $Path -ChildPath "$ExportFileName-WorkloadDomainApi.json"
-    Write-Logger "Generating Cloud Builder VCF Workload Domain Host Commission file $VCFWorkloadDomainUIJSONFile and $VCFWorkloadDomainAPIJSONFile for SDDC Manager UI and API"
+
+    # Log message indicating the start of JSON file generation
+    Write-Logger -Message "Generating Cloud Builder VCF Workload Domain Host Commission file ..."
+    Write-Logger -Message "These files will be used for SDDC Manager UI and API."
+    Write-Logger -Message "UI File Path: $VCFWorkloadDomainUIJSONFile"
+    Write-Logger -Message "API File Path: $VCFWorkloadDomainAPIJSONFile"
+
+    # Initialize arrays to hold host configurations for UI and API JSON structures
     $commissionHostsUI = @()
     $commissionHostsAPI = @()
+
+    # Iterate over each host in the workload domain and prepare configurations for both UI and API formats
     foreach ($name in $inputData.VirtualDeployment.WldEsx.Hosts.keys) {
         $hostFQDN = "$name.$($inputData.NetworkSpecs.DnsSpec.Domain)"
 
+        # Define UI-specific host configuration
         $tmp1 = [ordered] @{
             "hostfqdn"        = $hostFQDN
             "username"        = "root"
@@ -1877,24 +1946,27 @@ function Export-CommissionFile {
         }
         $commissionHostsUI += $tmp1
 
+        # Define API-specific host configuration
         $tmp2 = [ordered] @{
             "fqdn"          = $hostFQDN
             "username"      = "root"
             "password"      = $inputData.VirtualDeployment.WldEsx.Password
-            "networkPoolId" = "TBD"
+            "networkPoolId" = "TBD"  # Placeholder for network pool ID to be updated post-export if necessary
             "storageType"   = "VSAN"
         }
         $commissionHostsAPI += $tmp2
     }
 
+    # Assemble the UI JSON structure and export it to file
     $vcfCommissionHostConfigUI = @{
         "hostsSpec" = $commissionHostsUI
     }
-
     $vcfCommissionHostConfigUI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainUIJSONFile
-    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
 
+    # Export the API JSON structure to file
+    $commissionHostsAPI | ConvertTo-Json -Depth 2 | Out-File -LiteralPath $VCFWorkloadDomainAPIJSONFile
 }
+
 
 # Export the specified functions from this module to make them available for use when the module is imported
 Export-ModuleMember -Function Test-VMForReImport, Write-Logger, `

@@ -1,23 +1,107 @@
 <#
+.SYNOPSIS
+    Automated VMware Cloud Foundation (VCF) Deployment Script.
 
-Not supported
+.DESCRIPTION
+    This script automates the deployment of VMware Cloud Foundation (VCF) in a lab environment. 
+    It includes support for deploying nested ESXi hosts, configuring and deploying Cloud Builder,
+    and initiating the VCF bringup process. Additionally, it provides options to export the configuration
+    to JSON or Psd1 format and to generate workload domain commissioning files.
 
+.PARAMETER VIUsername
+    Specifies the vCenter Server username for connecting to the management vCenter. Default is 'administrator@vsphere.local'.
 
-#row Proxy Server Configuration                              No
-# 22 Proxy Server                                            n/a
-# 23 Proxy Port                                              n/a
-# 24 Proxy Username                                          n/a
-# 25 Proxy Password                                          n/a
-# 26 Proxy Transfer Protocol                                 HTTP
-# 27 HTTPS Proxy Certificate (PEM Encoded)…                  n/a
- 
-# row Secondary vSphere Distributed Switch (Optional)            Value
-# 6   Secondary vSphere Distributed Switch - Name *              n/a
-# 7   Secondary vSphere Distributed Switch - Transport Zone Type n/a
-# 8   Secondary vSphere Distributed Switch - pNICs               vmnic2,vmnic3
-# 9   Secondary vSphere Distributed Switch - MTU Size            9000.00
+.PARAMETER VIPassword
+    Specifies the vCenter Server password as a SecureString. Can be piped from input or provided directly. If not provided, it will prompt for input.
+
+.PARAMETER VICredential
+    Specifies a PSCredential object for authentication in place of `VIUsername` and `VIPassword`.
+
+.PARAMETER ConfigurationFile
+    Specifies the path to a configuration file, which can be in `.psd1`, `.xlsx`, or `.json` format, 
+    containing setup parameters for VCF deployment.
+
+.PARAMETER VAppName
+    Specifies the name of the vApp to use for organizing VMs if DRS is enabled.
+
+.PARAMETER UseSSH
+    Indicates that SSH is available for file transfer, enabling SCP for HCL file upload to Cloud Builder.
+
+.PARAMETER GenerateJsonFile
+    When set, exports the workload configuration to a JSON file.
+
+.PARAMETER GeneratePsd1File
+    When set, exports the workload configuration to a Psd1 file.
+
+.PARAMETER VCFBringup
+    When set, initiates the VCF bringup process after deployment.
+
+.PARAMETER NoVapp
+    Prevents creation of a vApp, even if DRS is enabled.
+
+.PARAMETER VIServer
+    Specifies the management vCenter Server FQDN. Default is 'vmw-vc01.lab.local'.
+
+.PARAMETER NoCloudBuilderDeploy
+    Prevents the deployment of Cloud Builder.
+
+.PARAMETER NoNestedMgmtEsx
+    Prevents the deployment of nested management ESXi hosts.
+
+.PARAMETER NestedWldEsx
+    Enables deployment of nested workload domain ESXi hosts.
+
+.PARAMETER EsxOVA
+    Specifies the path to the ESXi OVA file for deploying nested hosts.
+
+.PARAMETER CloudBuilderOVA
+    Specifies the path to the Cloud Builder OVA file for deployment.
+
+.PARAMETER ExportFileName
+    Specifies the base name for exported configuration files (JSON and/or Psd1).
+
+.EXAMPLE
+    # Example with VIPassword - Deploy VCF, export configuration, and initiate bringup
+    $password = ConvertTo-SecureString "YourPassword" -AsPlainText -Force
+    .\Deploy-VCF.ps1 -VIUsername "administrator@vsphere.local" -VIPassword $password -ConfigurationFile "C:\Configs\VCFConfig.psd1" `
+        -VCFBringup -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -GenerateJsonFile
+
+.EXAMPLE
+    # Example with VIPassword via pipeline
+    ConvertTo-SecureString "YourPassword" -AsPlainText -Force |
+     .\Deploy-VCF.ps1 -VIUsername "administrator@vsphere.local" -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
+        -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -NoNestedMgmtEsx
+
+.EXAMPLE
+    # Example with VICredential - Deploy VCF and skip bringup
+    $credential = New-Object System.Management.Automation.PSCredential("administrator@vsphere.local", (ConvertTo-SecureString "YourPassword" -AsPlainText -Force))
+    .\Deploy-VCF.ps1 -VICredential $credential -ConfigurationFile "C:\Configs\VCFConfig.xlsx" `
+        -VAppName "VCF_Lab" -EsxOVA "C:\OVAs\esxi.ova" -CloudBuilderOVA "C:\OVAs\cloudbuilder.ova" -NoVapp -NoCloudBuilderDeploy
+
+.NOTES
+    - This script requires VMware PowerCLI and the ImportExcel module (if using .xlsx configuration files).
+    - For SCP file transfers, the Posh-SSH module is needed.
+    - Ensure sufficient permissions and network connectivity to the vCenter Server and Cloud Builder.
+    - Only VCF versions 5.1.0, 5.1.1, 5.2.0, and 5.2.1 are currently supported by this script.
+
+    Unsupported Parameters from Excel Spreadsheet:
+    - Proxy Server Configuration:
+        - Proxy Server
+        - Proxy Port
+        - Proxy Username
+        - Proxy Password
+        - Proxy Transfer Protocol (only HTTP is supported)
+        - HTTPS Proxy Certificate (PEM Encoded)
+
+    - Secondary vSphere Distributed Switch (Optional):
+        - Name
+        - Transport Zone Type
+        - Physical NICs (pNICs)
+        - MTU Size
+
+.LINK
+    https://docs.vmware.com/en/VMware-Cloud-Foundation/index.html
 #>
-
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = "Medium", DefaultParameterSetName = 'Psd1File')]
 [CmdletBinding(DefaultParameterSetName = 'UsernamePassword')] 
 param(
@@ -77,19 +161,14 @@ param(
     $CloudBuilderOVA  
 )
 
+# Conditionally install and import required modules
 if ($ExcelFile) {
     install-Module -Name "ImportExcel" -Scope CurrentUser
 }
 if ($UseSSH) {
     install-module -Name "Posh-SSH"  -Scope CurrentUser
 }
-Import-Module -Name ./Utility.psm1
- 
- 
- 
-
-# VCF Licenses or leave blank for evaluation mode (requires VCF 5.1.1 or later)
-
+Import-Module -Name ./Utility.psm1  
   
 $uploadVCFNotifyScript = 0
 
@@ -97,7 +176,8 @@ $srcNotificationScript = "vcf-bringup-notification.sh"
 $dstNotificationScript = "/root/vcf-bringup-notification.sh"
 
 $StartTime = Get-Date
- 
+
+ # Load configuration file (supports .psd1, .xlsx, .json formats)
 if ($ConfigurationFile) {
     if (Test-Path $ConfigurationFile) {
         switch ( [System.IO.Path]::GetExtension($ConfigurationFile)) {
@@ -147,6 +227,7 @@ else {
     $VCFVersion = $null
 }
 
+# VCF version validation and password checks for Cloud Builder
 if ($null -eq $VCFVersion) {
     Write-Host -ForegroundColor Red "`nOnly VCF 5.1.0, 5.1.1, 5.2.0 and 5.2.1 are currently supported ...`n"
     exit
@@ -176,7 +257,7 @@ if ($PSVersionTable.PSEdition -ne "Core") {
 
 if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) { 
     Write-Host -ForegroundColor Magenta "`nPlease confirm the following configuration will be deployed:`n"
-
+# Summarize the deployment configuration for user confirmation
     Write-Host -ForegroundColor Yellow "---- VCF Automated Lab Deployment Configuration ---- "
     Write-Host -NoNewline -ForegroundColor Green "VMware Cloud Foundation Version: "
     Write-Host -ForegroundColor White $VCFVersion
@@ -288,6 +369,7 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx) -
 }
 
 if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx))) {
+    # Check and create vApp if required
     if (-not $NoVapp ) {
         # Check whether DRS is enabled as that is required to create vApp
         if ((Get-Cluster -Server $viConnection $cluster).DrsEnabled) {
@@ -312,7 +394,7 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx)))
     }
 }
 
-
+# Deploy nested management and workload ESXi hosts
 if (-not $NoNestedMgmtEsx  ) {  
     Write-Logger "Deploying $($inputData.VirtualDeployment.Esx.Hosts.Count) Managament ESX hosts ..."
     Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA  -VMHost $vmhost -Datastore  $Datastore 
@@ -332,7 +414,7 @@ if (-not $NoCloudBuilderDeploy) {
     Add-CloudBuilder  -InputData $InputData -ImportLocation $ImportLocation -VMHost $vmhost -Datastore  $Datastore 
 }
  
-
+# Export configurations (JSON or Psd1) as specified by user
 if ($GeneratePsd1File) {
     $exportPsd1 = Join-Path -Path $path -ChildPath "$exportFileName.psd1"
     Write-Logger "Saving the Configuration file '$exportPsd1' ..."
@@ -348,7 +430,8 @@ if ($GenerateJsonFile -or $VCFBringup) {
         Write-Logger "Saving the JSON workload file '$exportJson' ..."
         Get-JsonWorkload -InputData $inputData | ConvertTo-Json  -Depth 10 | out-file $exportJson
     } 
- 
+
+    # VCF Bringup initiation if requested
     if ($VCFBringup) {
         Write-Logger "Starting VCF Deployment Bringup ..."          
 
@@ -385,6 +468,7 @@ if ($GenerateJsonFile -or $VCFBringup) {
 
 }
 
+# Optional upload of notification script to Cloud Builder
 if ($VCFBringup -and $uploadVCFNotifyScript -eq 1) {
     if (Test-Path $srcNotificationScript) {
         $cbVM = Get-VM -Server $viConnection $inputData.VirtualDeployment.Cloudbuilder.Hostname
@@ -398,6 +482,7 @@ if ($VCFBringup -and $uploadVCFNotifyScript -eq 1) {
     }
 }
 
+# Disconnect from vCenter and display completion message
 if ($deployNestedESXiVMsForMgmt -eq 1 -or (-not $NoCloudBuilderDeploy)) {
     Write-Logger "Disconnecting from $VIServer ..."
     Disconnect-VIServer -Server $viConnection -Confirm:$false
