@@ -407,22 +407,36 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx)))
 # Deploy nested management and workload ESXi hosts
 if (-not $NoNestedMgmtEsx  ) {  
     Write-Logger "Deploying $($inputData.VirtualDeployment.Esx.Hosts.Count) Managament ESX hosts ..."
-    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA  -VMHost $vmhost -Datastore  $Datastore 
+    Add-VirtualEsx -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.Esx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA  -VMHost $vmhost -Datastore  $Datastore 
 }
 
-if ( $NestedWldEsx  ) {  
+# If the Nested Workload ESXi deployment is requested, proceed with the following actions
+if ($NestedWldEsx) {  
+
+    # Check if Workload ESXi information is provided; if not, log an error and exit
     if ($null -eq $inputData.VirtualDeployment.WldEsx) {
         Write-Logger -ForegroundColor Red "`nNo information available for the Workload ESX ...`n"
         exit
     }
-    Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
-    Add-VirtualEsx   -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs -VsanEsa:$inputData.vSan.ESA -VMHost $vmhost -Datastore  $Datastore 
-    Export-CommissionFile -InputData $InputData -Path $Path -ExportFileName $ExportFileName
 
+    # Log the start of deploying Workload ESXi hosts with the count from input data
+    Write-Logger "Deploying $($inputData.VirtualDeployment.WldEsx.Hosts.Count) Workload ESX hosts ..."
+
+    # Call the Add-VirtualEsx function to handle the deployment of Workload ESXi hosts
+    Add-VirtualEsx -ImportLocation $importLocation -Esx $inputData.VirtualDeployment.WldEsx -NetworkSpecs $inputData.NetworkSpecs `
+        -VsanEsa:$inputData.vSan.ESA -VMHost $vmhost -Datastore $Datastore 
+
+    # Export the configuration for the Workload Domain in both API and UI formats for SDDC Manager
+    Export-CommissionFile -InputData $InputData -Path $Path -ExportFileName $ExportFileName
 }
+
+# If the Cloud Builder deployment is not skipped, proceed to deploy it
 if (-not $NoCloudBuilderDeploy) {
-    Add-CloudBuilder  -InputData $InputData -ImportLocation $ImportLocation -VMHost $vmhost -Datastore  $Datastore 
+
+    # Call the Add-CloudBuilder function to handle the deployment of the Cloud Builder VM
+    Add-CloudBuilder -InputData $InputData -ImportLocation $ImportLocation -VMHost $vmhost -Datastore $Datastore 
 }
+
  
 # Export configurations (JSON or Psd1) as specified by user
 if ($GeneratePsd1File) {
@@ -431,49 +445,54 @@ if ($GeneratePsd1File) {
     Convert-HashtableToPsd1String -Hashtable $inputData | Out-File "$exportPsd1"
 }
 
+# If JSON file generation or VCF Bringup is requested, perform the following actions
 if ($GenerateJsonFile -or $VCFBringup) { 
 
+    # Retrieve the vSAN HCL from the first ESXi host and save it to the specified path
     Get-FirstEsxHcl -InputData $inputData -Path $path 
     
+    # If JSON file generation is enabled, define the export path and save the JSON workload file
     if ($GenerateJsonFile) { 
         $exportJson = Join-Path -Path $path -ChildPath "$exportFileName.json"
         Write-Logger "Saving the JSON workload file '$exportJson' ..."
+
+        # Convert the workload to JSON format and export it to the specified path
         Get-JsonWorkload -InputData $inputData | ConvertTo-Json  -Depth 10 | out-file $exportJson
     } 
 
     # VCF Bringup initiation if requested
     if ($VCFBringup) {
         Write-Logger "Starting VCF Deployment Bringup ..."          
-
-        Write-Logger "Waiting for Cloud Builder to be ready ..."
-        while (1) {
-            $credentialsair = "admin:$($inputData.VirtualDeployment.Cloudbuilder.AdminPassword)"
-            $bytes = [System.Text.Encoding]::ASCII.GetBytes($credentialsair)
-            $base64 = [System.Convert]::ToBase64String($bytes)
-
-            try {
-                if ($PSVersionTable.PSEdition -eq "Core") {
-                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -SkipCertificateCheck -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
-                }
-                else {
-                    $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -TimeoutSec 5 -Headers @{"Authorization" = "Basic $base64" }
-                }
+        # Initial brief delay to allow the Cloud Builder API service to initialize
+        Start-Sleep 5
+        
+        # Log the start of the Cloud Builder readiness check
+        Write-Logger "Waiting for Cloud Builder to be ready ..."  
+          
+        # Loop to repeatedly check Cloud Builder's readiness
+        while ($true) {
+            try { 
+                # Attempt a GET request to the Cloud Builder's API to check for a successful response            
+                $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -SkipCertificateCheck `
+                    -TimeoutSec 5 -Authentication Basic -Credential $inputData.VirtualDeployment.Cloudbuilder.AdminCredential
+               
+                # If status code 200 is returned, Cloud Builder is ready, and deployment can proceed
                 if ($requests.StatusCode -eq 200) {
-                    Write-Logger "Cloud Builder is now ready!"
+                    Write-Logger "Cloud Builder is now ready! waiting for 60 seconds ..."
+                    
+                    # Additional wait to ensure all services on Cloud Builder are fully up
+                    Start-Sleep 60 
                     break
                 }
             }
             catch {
+                # If the request fails, log and wait before retrying
                 Write-Logger "Cloud Builder is not ready yet, sleeping for 30 seconds ..."
                 Start-Sleep 30
             }
         }
-  
-        Start-Sleep 60 
-        Invoke-BringUp -InputData $inputdata  `
-            -CloudbuilderFqdn $inputData.VirtualDeployment.Cloudbuilder.Ip `
-            -AdminPassword $(ConvertTo-SecureString -String $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText -Force) `
-            -Path $path
+        # Invoke the bringup process once Cloud Builder is ready 
+        Invoke-BringUp -InputData $inputdata -Path $path
     }
 
 }

@@ -818,19 +818,20 @@ function Import-ExcelVCFData {
             VMFolder     = $Virtual[4].P2
             Esx          = [ordered]@{
                 # ESX configurations
-                Ova           = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
-                vCPU          = $Virtual[13].P2
-                vMemory       = $Virtual[14].P2
-                BootDisk      = $Virtual[15].P2
-                CachingvDisk  = $Virtual[16].P2
-                CapacityvDisk = $Virtual[17].P2
-                ESADisk1      = $Virtual[16].P2
-                ESADisk2      = $Virtual[17].P2 
-                VMNetwork1    = $Virtual[18].P2 
-                VMNetwork2    = $Virtual[19].P2 
-                Syslog        = $Virtual[20].P2
-                Password      = $credentialsImport[5].P2
-                Hosts         = [ordered]@{
+                Ova            = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
+                vCPU           = $Virtual[13].P2
+                vMemory        = $Virtual[14].P2
+                BootDisk       = $Virtual[15].P2
+                CachingvDisk   = $Virtual[16].P2
+                CapacityvDisk  = $Virtual[17].P2
+                ESADisk1       = $Virtual[16].P2
+                ESADisk2       = $Virtual[17].P2 
+                VMNetwork1     = $Virtual[18].P2 
+                VMNetwork2     = $Virtual[19].P2 
+                Syslog         = $Virtual[20].P2
+                Password       = $credentialsImport[5].P2
+                RootCredential = [PSCredential]::new('root', (ConvertTo-SecureString -String $credentialsImport[5].P2 -AsPlainText))
+                Hosts          = [ordered]@{
                     # Populate host data with IPs and thumbprints
                     $esxImport[0].P1 = [ordered]@{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2) ? "SHA256:DUMMY_VALUE" : $thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4) ? "SHA25_DUMMY_VALUE" : $thumbprintImport[3].P4 }
                     $esxImport[0].P2 = [ordered]@{Ip = $esxImport[1].P2; SshThumbprint = ($null -eq $thumbprintImport[4].P2) ? "SHA256:DUMMY_VALUE" : $thumbprintImport[4].P2; SslThumbprint = ($null -eq $thumbprintImport[4].P4) ? "SHA25_DUMMY_VALUE" : $thumbprintImport[4].P4 }
@@ -842,13 +843,14 @@ function Import-ExcelVCFData {
             WldEsx       = $wldHosts
             Cloudbuilder = [ordered]@{
                 # Cloud Builder specific configuration
-                Ova           = (($CloudBuilderOVA)? $CloudBuilderOVA : $Virtual[2].P5)
-                VMName        = $Virtual[6].P2
-                Hostname      = $Virtual[7].P2
-                Ip            = $Virtual[8].P2 
-                AdminPassword = $Virtual[10].P2
-                RootPassword  = $Virtual[11].P2
-                PortGroup     = $Virtual[9].P2
+                Ova             = (($CloudBuilderOVA)? $CloudBuilderOVA : $Virtual[2].P5)
+                VMName          = $Virtual[6].P2
+                Hostname        = $Virtual[7].P2
+                Ip              = $Virtual[8].P2 
+                AdminPassword   = $Virtual[10].P2
+                AdminCredential = [PSCredential]::new('admin', (ConvertTo-SecureString -String $Virtual[10].P2 -AsPlainText))              
+                RootPassword    = $Virtual[11].P2
+                PortGroup       = $Virtual[9].P2
             }
         }
 
@@ -1040,22 +1042,14 @@ function Import-ExcelVCFData {
 
 .PARAMETER InputData
 	A structured dictionary containing deployment configuration details. Includes paths, credentials, 
-	and network information necessary for bringup and HCL file handling.
-
-.PARAMETER CloudbuilderFqdn
-	The FQDN of the VMware Cloud Builder server where the bringup process will be initiated.
-
-.PARAMETER AdminPassword
-	The administrator password, provided as a SecureString. Used to create a PSCredential for 
-	authentication with Cloud Builder.
+	and network information necessary for bringup and HCL file handling..
 
 .PARAMETER Path
 	The path to the local directory containing the HCL file for transfer to Cloud Builder.
 
 .EXAMPLE
 	# Initiate bringup with HCL file and JSON payload
-	Invoke-BringUp -InputData $deploymentData -CloudbuilderFqdn "cloudbuilder.example.com" `
-                   -AdminPassword (ConvertTo-SecureString "password" -AsPlainText -Force) -Path "C:\path\to\hcl"
+	Invoke-BringUp -InputData $deploymentData  -Path "C:\path\to\hcl"
 
 .NOTES
 	- This function supports SCP for SSH-based environments and VM guest file copy for vSphere environments.
@@ -1065,20 +1059,15 @@ function Import-ExcelVCFData {
 function Invoke-BringUp {
     param(
         [System.Collections.Specialized.OrderedDictionary]
-        $InputData,
-
-        [string]
-        $CloudbuilderFqdn,
-
-        [securestring]
-        $AdminPassword, 
+        $InputData, 
 
         [string]
         $Path
     )
-    
-    # Create a PSCredential for use with SCP or API requests
-    $cred = [Management.Automation.PSCredential]::new('admin', $AdminPassword)
+     
+    $cloudbuilderIp= $InputData.VirtualDeployment.Cloudbuilder.Ip
+    $credential= $InputData.VirtualDeployment.Cloudbuilder.AdminCredential 
+
 
     # Check if an HCL file is provided for transfer
     if ($InputData.vSan.HclFile) {
@@ -1087,42 +1076,42 @@ function Invoke-BringUp {
         # Transfer HCL file via SCP if SSH is available
         if ($UseSSH.isPresent) { 
             Write-Logger "SCP HCL $($hclFileSource) file to $($hclFileDest) ..."
-            Set-SCPItem -ComputerName $CloudbuilderFqdn -Credential $cred -Path $hclFileSource -Destination $hclFileDest -AcceptKey
+            Set-SCPItem -ComputerName $cloudbuilderIp -Credential $credential -Path $hclFileSource -Destination $hclFileDest -AcceptKey
         }
         else {
             # If no VM object is defined, find the Cloud Builder VM by its IP address
             if (!$CloudbuilderVM) {
                 $CloudbuilderVM = Get-VM | Where-Object {
-                   (Get-VMGuest -VM $_).IPAddress -contains $CloudbuilderFqdn 
+                   (Get-VMGuest -VM $_).IPAddress -contains $cloudbuilderIp
                 }
             }
 
             # Transfer HCL file using Copy-VMGuestFile if VM object is found
             Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($hclFileDest) ..."
-            Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest -GuestCredential $cred -VM $CloudbuilderVM -LocalToGuest -Force
+            Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest -GuestCredential $credential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
         }
     }
 
     Write-Logger "Generate the JSON workload ..."
-    $json = Get-JsonWorkload -InputData $inputData | ConvertTo-Json  -Depth 10 -Compress
+    $json = Get-JsonWorkload -InputData $InputData | ConvertTo-Json  -Depth 10 -Compress
 
     # Log message indicating that the bringup request is being submitted
     Write-Logger "Submitting VCF Bringup request ..."
 
     # Define parameters for the bringup API request
     $bringupAPIParms = @{
-        Uri         = "https://$CloudbuilderFqdn/v1/sddcs"
+        Uri         = "https://$($cloudbuilderIp)/v1/sddcs"
         Method      = 'POST'
         Body        = $Json
         ContentType = 'application/json'
-        Credential  = $cred
+        Credential  = $credential
     }
 
     # Submit the bringup request to the Cloud Builder's API and capture the response
     $null = Invoke-RestMethod @bringupAPIParms -SkipCertificateCheck
 
     # Log message for user to check progress in the Cloud Builder UI
-    Write-Logger "Open browser to the VMware Cloud Builder UI (https://${CloudbuilderFqdn}) to monitor deployment progress ..."
+    Write-Logger "Open browser to the VMware Cloud Builder UI (https://$($InputData.VirtualDeployment.Cloudbuilder.Hostname) or (https://$($cloudbuilderIp)) to monitor deployment progress ..."
 }
 
 
@@ -1569,11 +1558,7 @@ function Get-FirstEsxHcl {
         [string]
         $Path
     )
-
-    # Convert password to secure string and create PSCredential
-    $esxPasswd = ConvertTo-SecureString -String $inputData.VirtualDeployment.Esx.Password -AsPlainText -Force
-    $cred = [Management.Automation.PSCredential]::new('root', $esxPasswd)
-
+ 
     # Define the server name for the first ESXi host
     $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
 
@@ -1591,7 +1576,7 @@ function Get-FirstEsxHcl {
 
         # Run Get-vSANHcl and return the output path
         return Get-vSANHcl -Server $serverName -Credential $cred -Path $Path
-    } -ArgumentList $serverName, $cred, $Path
+    } -ArgumentList $serverName, $inputData.VirtualDeployment.Esx.RootCredential, $Path
 
     # Wait for the job to complete and retrieve the result
     Wait-Job -Job $job
