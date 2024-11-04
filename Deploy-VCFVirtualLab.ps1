@@ -211,20 +211,14 @@ if ($ConfigurationFile) {
 }
 
 # Detect VCF version based on Cloud Builder OVA (support is 5.1.0+)
-if ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.1") {
-    $VCFVersion = "5.2.1"
-}
-elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.2.0") {
-    $VCFVersion = "5.2.0"
-}
-elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.1.1") {
-    $VCFVersion = "5.1.1"
-}
-elseif ($inputData.VirtualDeployment.CloudBuilder.Ova -match "5.1.0") {
-    $VCFVersion = "5.1.0"
-}
-else {
-    $VCFVersion = $null
+$vcfSupportedVersions = @("5.2.1", "5.2.0", "5.1.1", "5.1.0")
+$VCFVersion = $null
+
+foreach ($version in $vcfSupportedVersions) {
+    if ($inputData.VirtualDeployment.CloudBuilder.Ova -match $version) {
+        $VCFVersion = $version
+        break
+    }
 }
 
 # VCF version validation and password checks for Cloud Builder
@@ -233,8 +227,8 @@ if ($null -eq $VCFVersion) {
     exit
 }
 
-if ($VCFVersion -ge "5.2.0") {
-    if ( $inputData.VirtualDeployment.Cloudbuilder.AdminPassword.ToCharArray().count -lt 15 -or $inputData.VirtualDeployment.Cloudbuilder.RootPassword.ToCharArray().count -lt 15) {
+if ([Version]$VCFVersion -ge [version]"5.2.0") {
+    if ( $inputData.VirtualDeployment.Cloudbuilder.AdminPassword.Length -lt 15 -or $inputData.VirtualDeployment.Cloudbuilder.RootPassword.Length -lt 15) {
         Write-Host -ForegroundColor Red "`nCloud Builder passwords must be 15 characters or longer ...`n"
         exit
     }
