@@ -849,8 +849,7 @@ function Import-ExcelVCFData {
                 VMName          = $Virtual[6].P2
                 Hostname        = $Virtual[7].P2
                 Ip              = $Virtual[8].P2 
-                AdminPassword   = $Virtual[10].P2
-                AdminCredential = [PSCredential]::new('admin', (ConvertTo-SecureString -String $Virtual[10].P2 -AsPlainText))              
+                AdminPassword   = $Virtual[10].P2            
                 RootPassword    = $Virtual[11].P2
                 PortGroup       = $Virtual[9].P2
             }
@@ -1068,8 +1067,7 @@ function Invoke-BringUp {
     )
      
     $cloudbuilderIp= $InputData.VirtualDeployment.Cloudbuilder.Ip
-    $credential= $InputData.VirtualDeployment.Cloudbuilder.AdminCredential 
-
+    $credential= [PSCredential]::new('admin', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))     
 
     # Check if an HCL file is provided for transfer
     if ($InputData.vSan.HclFile) {

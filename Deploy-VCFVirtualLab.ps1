@@ -376,7 +376,7 @@ if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx) -
             break
         }
         $useCredential = $false
-        $VIPassword=$null
+        $VIPassword = $null
         Write-Logger -ForegroundColor red  -message "Login user:$($credential.UserName) Failed" 
     }
 
@@ -475,13 +475,15 @@ if ($GenerateJsonFile -or $VCFBringup) {
         
         # Log the start of the Cloud Builder readiness check
         Write-Logger "Waiting for Cloud Builder to be ready ..."  
-          
+        
+        $credential = [PSCredential]::new('admin', (ConvertTo-SecureString -String  $inputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))  
+        
         # Loop to repeatedly check Cloud Builder's readiness
         while ($true) {
             try { 
                 # Attempt a GET request to the Cloud Builder's API to check for a successful response            
                 $requests = Invoke-WebRequest -Uri "https://$($inputData.VirtualDeployment.Cloudbuilder.Ip)/v1/sddcs" -Method GET -SkipCertificateCheck `
-                    -TimeoutSec 5 -Authentication Basic -Credential $inputData.VirtualDeployment.Cloudbuilder.AdminCredential
+                    -TimeoutSec 5 -Authentication Basic -Credential $credential
                
                 # If status code 200 is returned, Cloud Builder is ready, and deployment can proceed
                 if ($requests.StatusCode -eq 200) {
