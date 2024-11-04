@@ -346,31 +346,38 @@ if ($PSCmdlet.ShouldProcess($VIServer, "Deploy VCF")) {
 }
 
 if (!(( $NoNestedMgmtEsx) -and ( $NoCloudBuilderDeploy) -and (! $NestedWldEsx) -and (!$VCFBringup) )) {
-
-    # Determine which parameter set is being used
-    switch ($PSCmdlet.ParameterSetName) {
-        'UsernamePassword' {
-            Write-Logger "Using Username and Password for authentication ..."
-            if ($null -eq $VIPassword) {
-                $VIPassword = Read-Host -Prompt "Password for $($VIUsername):" -AsSecureString
-            }
-            # Perform authentication with VIUsername and VIPassword
-            $credential = New-Object System.Management.Automation.PSCredential($VIUsername, $VIPassword)            
-        }
-
-        'Credential' {
+    $useCredential = ($PSCmdlet.ParameterSetName -eq 'Credential')   
+    while ($true) { 
+        # Determine which parameter set is being used
+        if ($useCredential) { 
             Write-Logger "Using PSCredential for authentication ..."
             # Use the provided VICredential
-            $credential = $VICredential
+            $credential = $VICredential                  
         }
-    }
+        else {
+            Write-Logger "Using Username and Password for authentication ..."                                
+            if ($null -eq $VIPassword) {
+                while ($true) {
+                    $_user = Read-Host -Prompt "Username ($($VIUsername))"
+                    $VIUsername = (([string]::IsNullOrEmpty($_user))? $VIUsername : $_user)
+                    if (!([string]::IsNullOrEmpty($VIUsername))) { break }
+                }
+                $VIPassword = Read-Host -Prompt "Password for $($VIUsername)" -AsSecureString
+                 
+            }
+            # Perform authentication with VIUsername and VIPassword
+            $credential = New-Object System.Management.Automation.PSCredential($VIUsername, $VIPassword)
+        }
 
-
-    Write-Logger "Connecting to Management vCenter Server $VIServer ..."
-    $viConnection = Connect-VIServer $VIServer -Credential $credential -WarningAction SilentlyContinue 
-    if (!$viConnection) {
-        Write-Logger -ForegroundColor red  -message "Login user:$($credential.UserName)  Failed" 
-        exit
+        Write-Logger "Connecting to Management vCenter Server $VIServer ..."
+        $viConnection = Connect-VIServer $VIServer -Credential $credential 
+        if ( $viConnection) {
+            Write-Logger -message "Connected to vCenter Server $VIServer"
+            break
+        }
+        $useCredential = $false
+        $VIPassword=$null
+        Write-Logger -ForegroundColor red  -message "Login user:$($credential.UserName) Failed" 
     }
 
     $datastore = Get-Datastore -Server $viConnection -Name $inputData.VirtualDeployment.VMDatastore | Select-Object -First 1
