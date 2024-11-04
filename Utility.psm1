@@ -456,7 +456,7 @@ function Convert-HashtableToPsd1String {
 
 .EXAMPLE
 	# Create a workload configuration hashtable
-	$workloadConfig = Get-JsonWorkload -InputData $inputData
+	$workloadConfig = Get-JsonWorkload -InputData $InputData
 
 .NOTES
 	This function is designed to work with ordered hashtables, ensuring the order of keys is maintained in the output.
@@ -673,7 +673,7 @@ function Get-JsonWorkload {
 
 .EXAMPLE
 	# Generate host specifications for a virtual deployment
-	$hostSpecs = Get-HostSpec -InputData $inputData
+	$hostSpecs = Get-HostSpec -InputData $InputData
 
 .NOTES
 	This function is used to generate host configuration details for each ESXi host, 
@@ -833,7 +833,6 @@ function Import-ExcelVCFData {
                 VMNetwork2     = $Virtual[19].P2 
                 Syslog         = $Virtual[20].P2
                 Password       = $credentialsImport[5].P2
-                RootCredential = [PSCredential]::new('root', (ConvertTo-SecureString -String $credentialsImport[5].P2 -AsPlainText))
                 Hosts          = [ordered]@{
                     # Populate host data with IPs and thumbprints
                     $esxImport[0].P1 = [ordered]@{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2) ? "SHA256:DUMMY_VALUE" : $thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4) ? "SHA25_DUMMY_VALUE" : $thumbprintImport[3].P4 }
@@ -1556,17 +1555,17 @@ function Get-vSANHcl {
 function Get-FirstEsxHcl {
     param (
         [System.Management.Automation.OrderedHashtable]
-        $inputData,
+        $InputData,
 
         [string]
         $Path
     )
  
     # Define the server name for the first ESXi host
-    $serverName = "$($inputData.VirtualDeployment.Esx.Hosts.keys[0]).$($inputData.NetworkSpecs.DnsSpec.Domain)"
+    $serverName = "$($InputData.VirtualDeployment.Esx.Hosts.keys[0]).$($InputData.NetworkSpecs.DnsSpec.Domain)"
 
     Write-Logger "Extract the vSAN HCL from '$serverName' ..."
-    
+    $rootCredential = [PSCredential]::new('root', (ConvertTo-SecureString -String $InputData.VirtualDeployment.Esx.Password -AsPlainText))
     # Start a background job to run Get-vSANHcl with provided parameters
     $job = Start-Job -ScriptBlock { 
         param (
@@ -1579,7 +1578,7 @@ function Get-FirstEsxHcl {
 
         # Run Get-vSANHcl and return the output path
         return Get-vSANHcl -Server $serverName -Credential $cred -Path $Path
-    } -ArgumentList $serverName, $inputData.VirtualDeployment.Esx.RootCredential, $Path
+    } -ArgumentList $serverName, $rootCredential, $Path
 
     # Wait for the job to complete and retrieve the result
     Wait-Job -Job $job
@@ -1721,7 +1720,7 @@ function Show-Summary {
         Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.Esx.VMNetwork2)"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask: "
-        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
+        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $InputData.NetworkSpecs.ManagementNetwork.subnet)
         Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
         Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
         Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
@@ -1765,7 +1764,7 @@ function Show-Summary {
         Write-Logger -NoNewline -ForegroundColor Green -Message "Network Pool 2: "
         Write-Logger -ForegroundColor White -Message "$($InputData.VirtualDeployment.WldEsx.VMNetwork2)"
         Write-Logger -NoNewline -ForegroundColor Green -Message "Netmask: "
-        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
+        Write-Logger -ForegroundColor White -Message (ConvertTo-Netmask -NetworkCIDR $InputData.NetworkSpecs.ManagementNetwork.subnet)
         Write-Logger -NoNewline -ForegroundColor Green -Message "Gateway: "
         Write-Logger -ForegroundColor White -Message $InputData.NetworkSpecs.ManagementNetwork.gateway
         Write-Logger -NoNewline -ForegroundColor Green -Message "DNS: "
@@ -1837,7 +1836,7 @@ function Add-CloudBuilder {
         $ovfconfig.NetworkMapping.$networkMapLabel.value = $InputData.VirtualDeployment.Cloudbuilder.PortGroup
         $ovfconfig.common.guestinfo.hostname.value = $InputData.VirtualDeployment.Cloudbuilder.Hostname
         $ovfconfig.common.guestinfo.ip0.value = $InputData.VirtualDeployment.Cloudbuilder.Ip
-        $ovfconfig.common.guestinfo.netmask0.value = (ConvertTo-Netmask -NetworkCIDR $inputData.NetworkSpecs.ManagementNetwork.subnet)
+        $ovfconfig.common.guestinfo.netmask0.value = (ConvertTo-Netmask -NetworkCIDR $InputData.NetworkSpecs.ManagementNetwork.subnet)
         $ovfconfig.common.guestinfo.gateway.value = $InputData.NetworkSpecs.ManagementNetwork.gateway
         $ovfconfig.common.guestinfo.DNS.value = $InputData.NetworkSpecs.DnsSpec.NameServers
         $ovfconfig.common.guestinfo.domain.value = $InputData.NetworkSpecs.DnsSpec.Domain
@@ -1921,14 +1920,14 @@ function Export-CommissionFile {
     $commissionHostsAPI = @()
 
     # Iterate over each host in the workload domain and prepare configurations for both UI and API formats
-    foreach ($name in $inputData.VirtualDeployment.WldEsx.Hosts.keys) {
-        $hostFQDN = "$name.$($inputData.NetworkSpecs.DnsSpec.Domain)"
+    foreach ($name in $InputData.VirtualDeployment.WldEsx.Hosts.keys) {
+        $hostFQDN = "$name.$($InputData.NetworkSpecs.DnsSpec.Domain)"
 
         # Define UI-specific host configuration
         $tmp1 = [ordered] @{
             "hostfqdn"        = $hostFQDN
             "username"        = "root"
-            "password"        = $inputData.VirtualDeployment.WldEsx.Password
+            "password"        = $InputData.VirtualDeployment.WldEsx.Password
             "networkPoolName" = $InputData.Management.PoolName
             "storageType"     = "VSAN"
         }
@@ -1938,7 +1937,7 @@ function Export-CommissionFile {
         $tmp2 = [ordered] @{
             "fqdn"          = $hostFQDN
             "username"      = "root"
-            "password"      = $inputData.VirtualDeployment.WldEsx.Password
+            "password"      = $InputData.VirtualDeployment.WldEsx.Password
             "networkPoolId" = "TBD"  # Placeholder for network pool ID to be updated post-export if necessary
             "storageType"   = "VSAN"
         }
