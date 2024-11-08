@@ -426,7 +426,7 @@ function Convert-HashtableToPsd1String {
             $arrayOutput += "$currentIndentation)" + [Environment]::NewLine
             $output += $arrayOutput
         }
-        elseif( $value -is [pscredential]) {
+        elseif ( $value -is [pscredential]) {
             # Skip pscredential type
         }
         else {
@@ -668,7 +668,7 @@ function Get-JsonWorkload {
 	An ordered hashtable containing necessary data for generating host specifications. 
 	This includes network settings, credentials, and thumbprint details for ESXi hosts.
 
-.RETURNS
+.OUTPUTS
 	Returns an array of ordered hashtables, where each hashtable represents a host specification.
 
 .EXAMPLE
@@ -821,19 +821,19 @@ function Import-ExcelVCFData {
             VMFolder     = $Virtual[4].P2
             Esx          = [ordered]@{
                 # ESX configurations
-                Ova            = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
-                vCPU           = $Virtual[13].P2
-                vMemory        = $Virtual[14].P2
-                BootDisk       = $Virtual[15].P2
-                CachingvDisk   = $Virtual[16].P2
-                CapacityvDisk  = $Virtual[17].P2
-                ESADisk1       = $Virtual[16].P2
-                ESADisk2       = $Virtual[17].P2 
-                VMNetwork1     = $Virtual[18].P2 
-                VMNetwork2     = $Virtual[19].P2 
-                Syslog         = $Virtual[20].P2
-                Password       = $credentialsImport[5].P2
-                Hosts          = [ordered]@{
+                Ova           = (($EsxOVA)? $EsxOVA : $Virtual[1].P5) 
+                vCPU          = $Virtual[13].P2
+                vMemory       = $Virtual[14].P2
+                BootDisk      = $Virtual[15].P2
+                CachingvDisk  = $Virtual[16].P2
+                CapacityvDisk = $Virtual[17].P2
+                ESADisk1      = $Virtual[16].P2
+                ESADisk2      = $Virtual[17].P2 
+                VMNetwork1    = $Virtual[18].P2 
+                VMNetwork2    = $Virtual[19].P2 
+                Syslog        = $Virtual[20].P2
+                Password      = $credentialsImport[5].P2
+                Hosts         = [ordered]@{
                     # Populate host data with IPs and thumbprints
                     $esxImport[0].P1 = [ordered]@{Ip = $esxImport[1].P1; SshThumbprint = ($null -eq $thumbprintImport[3].P2) ? "SHA256:DUMMY_VALUE" : $thumbprintImport[3].P2; SslThumbprint = ($null -eq $thumbprintImport[3].P4) ? "SHA25_DUMMY_VALUE" : $thumbprintImport[3].P4 }
                     $esxImport[0].P2 = [ordered]@{Ip = $esxImport[1].P2; SshThumbprint = ($null -eq $thumbprintImport[4].P2) ? "SHA256:DUMMY_VALUE" : $thumbprintImport[4].P2; SslThumbprint = ($null -eq $thumbprintImport[4].P4) ? "SHA25_DUMMY_VALUE" : $thumbprintImport[4].P4 }
@@ -845,13 +845,13 @@ function Import-ExcelVCFData {
             WldEsx       = $wldHosts
             Cloudbuilder = [ordered]@{
                 # Cloud Builder specific configuration
-                Ova             = (($CloudBuilderOVA)? $CloudBuilderOVA : $Virtual[2].P5)
-                VMName          = $Virtual[6].P2
-                Hostname        = $Virtual[7].P2
-                Ip              = $Virtual[8].P2 
-                AdminPassword   = $Virtual[10].P2            
-                RootPassword    = $Virtual[11].P2
-                PortGroup       = $Virtual[9].P2
+                Ova           = (($CloudBuilderOVA)? $CloudBuilderOVA : $Virtual[2].P5)
+                VMName        = $Virtual[6].P2
+                Hostname      = $Virtual[7].P2
+                Ip            = $Virtual[8].P2 
+                AdminPassword = $Virtual[10].P2            
+                RootPassword  = $Virtual[11].P2
+                PortGroup     = $Virtual[9].P2
             }
         }
 
@@ -1066,8 +1066,8 @@ function Invoke-BringUp {
         $Path
     )
      
-    $cloudbuilderIp= $InputData.VirtualDeployment.Cloudbuilder.Ip
-    $credential= [PSCredential]::new('admin', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))     
+    $cloudbuilderIp = $InputData.VirtualDeployment.Cloudbuilder.Ip
+    $credential = [PSCredential]::new('admin', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))     
 
     # Check if an HCL file is provided for transfer
     if ($InputData.vSan.HclFile) {
