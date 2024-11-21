@@ -1067,16 +1067,17 @@ function Invoke-BringUp {
     )
      
     $cloudbuilderIp = $InputData.VirtualDeployment.Cloudbuilder.Ip
-    $credential = [PSCredential]::new('admin', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))     
+    $rootCredential = [PSCredential]::new('root', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.RootPassword -AsPlainText))     
+    $adminCredential = [PSCredential]::new('admin', (ConvertTo-SecureString -String  $InputData.VirtualDeployment.Cloudbuilder.AdminPassword -AsPlainText))     
 
     # Check if an HCL file is provided for transfer
     if ($InputData.vSan.HclFile) {
         $hclFileSource = Join-Path -Path $Path -ChildPath $(split-path $InputData.vSan.HclFile -Leaf)
-        $hclFileDest = $InputData.vSan.HclFile 
+        $hclFileDest = '/opt/vmware/bringup/tmp/all.json'
         # Transfer HCL file via SCP if SSH is available
         if ($UseSSH.isPresent) { 
             Write-Logger "SCP HCL $($hclFileSource) file to $($hclFileDest) ..."
-            Set-SCPItem -ComputerName $cloudbuilderIp -Credential $credential -Path $hclFileSource -Destination $hclFileDest -AcceptKey
+            Set-SCPItem -ComputerName $cloudbuilderIp -Credential $rootCredential -Path $hclFileSource -Destination $hclFileDest -AcceptKey
         }
         else {
             # If no VM object is defined, find the Cloud Builder VM by its IP address
@@ -1087,17 +1088,15 @@ function Invoke-BringUp {
             }
 
             # Transfer HCL file using Copy-VMGuestFile if VM object is found
-            Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($hclFileDest) ..."
-            Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest -GuestCredential $credential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
+            Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($InputData.vSan.HclFile ) ..."
+            Copy-VMGuestFile -Source $hclFileSource -Destination $InputData.vSan.HclFile  -GuestCredential $rootCredential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
 
-            Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to  /opt/vmware/bringup/tmp/all.json ..."
-            Copy-VMGuestFile -Source $hclFileSource -Destination '/opt/vmware/bringup/tmp/all.json' -GuestCredential $credential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
             # Combine the commands into a script
-            $script = @'
-chmod 644 /opt/vmware/bringup/tmp/*
-chown vcf_bringup:vcf /opt/vmware/bringup/tmp/*
-'@
-            Invoke-VMScript -VM $CloudbuilderVM -ScriptText $script -GuestCredential $credential -ScriptType Bash
+            $script = @" 
+chmod 644 /opt/vmware/bringup/tmp/all.json
+chown vcf_bringup:vcf /opt/vmware/bringup/tmp/all.json
+"@
+            Invoke-VMScript -VM $CloudbuilderVM -ScriptText $script -GuestCredential $rootCredential -ScriptType Bash
         }
     }
 
@@ -1113,7 +1112,7 @@ chown vcf_bringup:vcf /opt/vmware/bringup/tmp/*
         Method      = 'POST'
         Body        = $Json
         ContentType = 'application/json'
-        Credential  = $credential
+        Credential  = $adminCredential
     }
 
     # Submit the bringup request to the Cloud Builder's API and capture the response
@@ -1508,11 +1507,18 @@ function Get-vSANHcl {
         Write-Error "Unable to retrieve vSAN HCL jsonUpdatedTime, ensure you have internet connectivity when running this script"
         return $null
     }
+    
+    $Now = [System.DateTime]::UtcNow
 
+    # Convert to epoch time
+    $Epoch = ($Now - [System.DateTime]::UnixEpoch).TotalSeconds
+    To get the integer value of the epoch
     # Construct final HCL object for output
     $hclObject = [ordered] @{
-        timestamp         = $vsanHclTime.timestamp
-        jsonUpdatedTime   = $vsanHclTime.jsonUpdatedTime
+        # timestamp         = $vsanHclTime.timestamp
+        timestamp         = [math]::Floor($Epoch) 
+        # jsonUpdatedTime   = $vsanHclTime.jsonUpdatedTime
+        jsonUpdatedTime   = $Now.ToString("MMMM dd, yyyy, h:mm tt K")
         totalCount        = $($ssdResults.count + $ctrResults.count)
         supportedReleases = $supportedESXiReleases
         eula              = @{}

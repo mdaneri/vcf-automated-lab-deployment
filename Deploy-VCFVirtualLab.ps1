@@ -448,10 +448,6 @@ if ($GeneratePsd1File) {
 
 # If JSON file generation or VCF Bringup is requested, perform the following actions
 if ($GenerateJsonFile -or $VCFBringup) { 
-
-    # Retrieve the vSAN HCL from the first ESXi host and save it to the specified path
-    Get-FirstEsxHcl -InputData $inputData -Path $path 
-    
     # If JSON file generation is enabled, define the export path and save the JSON workload file
     if ($GenerateJsonFile) { 
         $exportJson = Join-Path -Path $path -ChildPath "$exportFileName.json"
@@ -463,6 +459,9 @@ if ($GenerateJsonFile -or $VCFBringup) {
 
     # VCF Bringup initiation if requested
     if ($VCFBringup) {
+        # Retrieve the vSAN HCL from the first ESXi host and save it to the specified path
+        Get-FirstEsxHcl -InputData $inputData -Path $path 
+    
         Write-Logger "Starting VCF Deployment Bringup ..."          
         # Initial brief delay to allow the Cloud Builder API service to initialize
         Start-Sleep 5
