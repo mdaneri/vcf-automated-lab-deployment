@@ -1512,7 +1512,7 @@ function Get-vSANHcl {
 
     # Convert to epoch time
     $Epoch = ($Now - [System.DateTime]::UnixEpoch).TotalSeconds
-    To get the integer value of the epoch
+   # To get the integer value of the epoch
     # Construct final HCL object for output
     $hclObject = [ordered] @{
         # timestamp         = $vsanHclTime.timestamp
