@@ -14,3 +14,5 @@ vapp-test copy.json
 custom_vsan_esa*.json
 vcf-test?
 vcf-test
+vcf-5.2.1/vcf-5.2.1-WorkloadDomainApi.json
+vcf-5.2.1/vcf-5.2.1-WorkloadDomainUi.json

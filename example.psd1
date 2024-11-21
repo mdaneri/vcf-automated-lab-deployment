@@ -6,7 +6,7 @@
 		"Cloudbuilder" = [ordered]@{
 			"RootPassword"  = 'Pata2Pata1Pata!'
 			"Ip"            = '192.168.10.195'
-			"Ova"           = './ova/VMware-Cloud-Builder-5.2.0.0-24108943_OVF10.ova'
+			"Ova"           = './ova/VMware-Cloud-Builder-5.2.1.0-24307856_OVF10.ova'
 			"Hostname"      = 'cloudbuilder.vcf.lab.local'
 			"VMName"        = 'cloudbuilder'
 			"PortGroup"     = 'VLAN-10'

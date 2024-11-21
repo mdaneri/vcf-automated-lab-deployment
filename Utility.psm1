@@ -1089,6 +1089,15 @@ function Invoke-BringUp {
             # Transfer HCL file using Copy-VMGuestFile if VM object is found
             Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($hclFileDest) ..."
             Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest -GuestCredential $credential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
+
+            Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to  /opt/vmware/bringup/tmp/all.json ..."
+            Copy-VMGuestFile -Source $hclFileSource -Destination '/opt/vmware/bringup/tmp/all.json' -GuestCredential $credential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
+            # Combine the commands into a script
+            $script = @'
+chmod 644 /opt/vmware/bringup/tmp/*
+chown vcf_bringup:vcf /opt/vmware/bringup/tmp/*
+'@
+            Invoke-VMScript -VM $CloudbuilderVM -ScriptText $script -GuestCredential $credential -ScriptType Bash
         }
     }
 
