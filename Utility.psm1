@@ -1090,6 +1090,7 @@ function Invoke-BringUp {
             # Transfer HCL file using Copy-VMGuestFile if VM object is found
             Write-Logger "Copy-VMGuestFile HCL $($hclFileSource) file to $($InputData.vSan.HclFile ) ..."
             Copy-VMGuestFile -Source $hclFileSource -Destination $InputData.vSan.HclFile  -GuestCredential $rootCredential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
+            Copy-VMGuestFile -Source $hclFileSource -Destination $hclFileDest  -GuestCredential $rootCredential -VM $CloudbuilderVM -LocalToGuest -Force -ErrorAction Stop
 
             # Combine the commands into a script
             $script = @" 
@@ -1496,7 +1497,7 @@ function Get-vSANHcl {
     }
 
     # Retrieve the latest vSAN HCL jsonUpdatedTime from VMware's API
-    $results = Invoke-WebRequest -Uri 'https://partnerweb.vmware.com/service/vsan/all.json?lastupdatedtime' -Headers @{'x-vmw-esp-clientid' = 'vsan-hcl-vcf-2024' }
+    <#    $results = Invoke-WebRequest -Uri 'https://partnerweb.vmware.com/service/vsan/all.json?lastupdatedtime' -Headers @{'x-vmw-esp-clientid' = 'vsan-hcl-vcf-2024' }
     $pattern = '\{(.+?)\}'
     $matched = ([regex]::Matches($results, $pattern)).Value
 
@@ -1507,12 +1508,12 @@ function Get-vSANHcl {
         Write-Error "Unable to retrieve vSAN HCL jsonUpdatedTime, ensure you have internet connectivity when running this script"
         return $null
     }
-    
+    #>
     $Now = [System.DateTime]::UtcNow
 
     # Convert to epoch time
     $Epoch = ($Now - [System.DateTime]::UnixEpoch).TotalSeconds
-   # To get the integer value of the epoch
+    # To get the integer value of the epoch
     # Construct final HCL object for output
     $hclObject = [ordered] @{
         # timestamp         = $vsanHclTime.timestamp
@@ -1530,8 +1531,9 @@ function Get-vSANHcl {
     }
 
     # Generate the output filename with timestamp
-    $dateTimeGenerated = Get-Date -UFormat "%m_%d_%Y_%H_%M_%S"
-    $filename = "custom_vsan_esa_hcl_${dateTimeGenerated}.json"
+    # $dateTimeGenerated = Get-Date -UFormat "%m_%d_%Y_%H_%M_%S"
+    # $filename = "custom_vsan_esa_hcl_${dateTimeGenerated}.json"
+    $filename = 'all.json'
     $outputFileName = Join-Path -Path $Path -ChildPath $filename
 
     # Write-Logger -ForegroundColor Green -Message "Saving Custom vSAN ESA HCL to ${outputFileName}`n"
